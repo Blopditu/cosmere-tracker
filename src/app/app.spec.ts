@@ -20,7 +20,6 @@ describe('App', () => {
     const fixture = TestBed.createComponent(App);
     await fixture.whenStable();
     const compiled = fixture.nativeElement as HTMLElement;
-    expect(compiled.textContent).toContain('Cosmere Combat Tracker');
-    expect(compiled.textContent).toContain('Sessions');
+    expect(compiled.querySelector('router-outlet')).not.toBeNull();
   });
 });

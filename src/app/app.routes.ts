@@ -1,49 +1,56 @@
 import { Routes } from '@angular/router';
-import { AnalyticsPageComponent } from './pages/analytics-page.component';
-import { FightRecapPageComponent } from './pages/fight-recap-page.component';
-import { FightTrackerPageComponent } from './pages/fight-tracker-page.component';
-import { RosterPageComponent } from './pages/roster-page.component';
-import { SessionDetailPageComponent } from './pages/session-detail-page.component';
-import { SessionRecapPageComponent } from './pages/session-recap-page.component';
-import { SessionsPageComponent } from './pages/sessions-page.component';
-import { SettingsPageComponent } from './pages/settings-page.component';
+import { ShellLayoutComponent } from './core/shell-layout.component';
+import { SessionListPageComponent } from './features/session/session-list-page.component';
+import { SessionDashboardPageComponent } from './features/session/session-dashboard-page.component';
+import { RollTrackerPageComponent } from './features/roll-tracker/roll-tracker-page.component';
+import { CombatSetupPageComponent } from './features/combat-tracker/combat-setup-page.component';
+import { CombatTrackerPageComponent } from './features/combat-tracker/combat-tracker-page.component';
+import { PostCombatStatsPageComponent } from './features/post-combat-stats/post-combat-stats-page.component';
+import { StageManagerPageComponent } from './features/stage-manager/stage-manager-page.component';
+import { PlayerDisplayPageComponent } from './features/stage-manager/player-display-page.component';
 
 export const routes: Routes = [
   {
+    path: 'display/:sessionId',
+    component: PlayerDisplayPageComponent,
+  },
+  {
     path: '',
-    pathMatch: 'full',
-    redirectTo: 'sessions',
-  },
-  {
-    path: 'roster',
-    component: RosterPageComponent,
-  },
-  {
-    path: 'sessions',
-    component: SessionsPageComponent,
-  },
-  {
-    path: 'sessions/:sessionId',
-    component: SessionDetailPageComponent,
-  },
-  {
-    path: 'sessions/:sessionId/fights/:fightId',
-    component: FightTrackerPageComponent,
-  },
-  {
-    path: 'sessions/:sessionId/fights/:fightId/recap',
-    component: FightRecapPageComponent,
-  },
-  {
-    path: 'sessions/:sessionId/recap',
-    component: SessionRecapPageComponent,
-  },
-  {
-    path: 'analytics',
-    component: AnalyticsPageComponent,
-  },
-  {
-    path: 'settings',
-    component: SettingsPageComponent,
+    component: ShellLayoutComponent,
+    children: [
+      {
+        path: '',
+        pathMatch: 'full',
+        redirectTo: 'sessions',
+      },
+      {
+        path: 'sessions',
+        component: SessionListPageComponent,
+      },
+      {
+        path: 'sessions/:sessionId',
+        component: SessionDashboardPageComponent,
+      },
+      {
+        path: 'sessions/:sessionId/rolls',
+        component: RollTrackerPageComponent,
+      },
+      {
+        path: 'sessions/:sessionId/combats/new',
+        component: CombatSetupPageComponent,
+      },
+      {
+        path: 'sessions/:sessionId/combats/:combatId',
+        component: CombatTrackerPageComponent,
+      },
+      {
+        path: 'sessions/:sessionId/combats/:combatId/summary',
+        component: PostCombatStatsPageComponent,
+      },
+      {
+        path: 'gm/stage-manager/:sessionId',
+        component: StageManagerPageComponent,
+      },
+    ],
   },
 ];

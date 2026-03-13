@@ -1,14 +1,10 @@
-import { Component, computed, inject } from '@angular/core';
-import { RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
-import { AppStoreService } from './core/app-store.service';
+import { Component } from '@angular/core';
+import { RouterOutlet } from '@angular/router';
 
 @Component({
   selector: 'app-root',
-  imports: [RouterOutlet, RouterLink, RouterLinkActive],
+  imports: [RouterOutlet],
   templateUrl: './app.html',
   styleUrl: './app.scss',
 })
-export class App {
-  readonly store = inject(AppStoreService);
-  readonly activeCount = computed(() => this.store.sessions().filter((entry) => !entry.archived).length);
-}
+export class App {}

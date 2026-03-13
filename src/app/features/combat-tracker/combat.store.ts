@@ -1,0 +1,76 @@
+import { Injectable, signal } from '@angular/core';
+import {
+  CombatRecord,
+  CombatSummary,
+  CreateActionEventInput,
+  CreateCombatInput,
+  CreateConditionEventInput,
+  CreateFocusEventInput,
+  CreateRoundInput,
+  UpdateTurnInput,
+} from '@shared/domain';
+import { ApiService } from '../../core/api.service';
+
+@Injectable({
+  providedIn: 'root',
+})
+export class CombatStore {
+  readonly combats = signal<CombatRecord[]>([]);
+  readonly combat = signal<CombatRecord | null>(null);
+  readonly summary = signal<CombatSummary | null>(null);
+  readonly loading = signal(false);
+
+  constructor(private readonly api: ApiService) {}
+
+  async loadForSession(sessionId: string): Promise<void> {
+    this.combats.set(await this.api.get<CombatRecord[]>(`/api/sessions/${sessionId}/combats`));
+  }
+
+  async create(sessionId: string, input: CreateCombatInput): Promise<CombatRecord> {
+    const combat = await this.api.post<CombatRecord>(`/api/sessions/${sessionId}/combats`, input);
+    this.combats.update((items) => [combat, ...items]);
+    return combat;
+  }
+
+  async loadCombat(combatId: string): Promise<void> {
+    this.loading.set(true);
+    try {
+      this.combat.set(await this.api.get<CombatRecord>(`/api/combats/${combatId}`));
+      this.summary.set(null);
+    } finally {
+      this.loading.set(false);
+    }
+  }
+
+  async startCombat(combatId: string): Promise<void> {
+    this.combat.set(await this.api.post<CombatRecord>(`/api/combats/${combatId}/start`, {}));
+  }
+
+  async finishCombat(combatId: string): Promise<void> {
+    this.combat.set(await this.api.post<CombatRecord>(`/api/combats/${combatId}/finish`, {}));
+  }
+
+  async createRound(combatId: string, input: CreateRoundInput): Promise<void> {
+    this.combat.set(await this.api.post<CombatRecord>(`/api/combats/${combatId}/rounds`, input));
+  }
+
+  async updateTurn(combatId: string, turnId: string, patch: UpdateTurnInput): Promise<void> {
+    this.combat.set(await this.api.patch<CombatRecord>(`/api/combats/${combatId}/turns/${turnId}`, patch));
+  }
+
+  async logAction(combatId: string, input: CreateActionEventInput): Promise<void> {
+    this.combat.set(await this.api.post<CombatRecord>(`/api/combats/${combatId}/actions`, input));
+  }
+
+  async logFocus(combatId: string, input: CreateFocusEventInput): Promise<void> {
+    this.combat.set(await this.api.post<CombatRecord>(`/api/combats/${combatId}/focus-events`, input));
+  }
+
+  async logCondition(combatId: string, input: CreateConditionEventInput): Promise<void> {
+    this.combat.set(await this.api.post<CombatRecord>(`/api/combats/${combatId}/condition-events`, input));
+  }
+
+  async loadSummary(combatId: string): Promise<void> {
+    this.summary.set(await this.api.get<CombatSummary>(`/api/combats/${combatId}/summary`));
+  }
+}

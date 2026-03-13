@@ -1,59 +1,88 @@
-# CosmereCombatTracker
+# Cosmere Tracker
 
-This project was generated using [Angular CLI](https://github.com/angular/angular-cli) version 21.2.2.
+Local-first GM console for tabletop sessions, with an Angular frontend, an Express backend, JSON persistence, local uploads, and a navy-and-gold Cosmere-inspired UI.
 
-## Development server
+## Stack
 
-To start a local development server, run:
+- Frontend: Angular 21
+- Backend: Node.js + Express + TypeScript
+- Persistence: JSON files in `backend/data/`
+- Uploads: local files in `backend/uploads/`
+- Shared types: `shared/domain/`
 
-```bash
-ng serve
-```
+## Features
 
-Once the server is running, open your browser and navigate to `http://localhost:4200/`. The application will automatically reload whenever you modify any of the source files.
+- Session management with party members and enemy templates
+- Session dashboard with recent rolls and combats
+- Global roll tracker with analytics
+- Combat setup, turn grouping, action logging, focus and damage tracking
+- Post-combat scoreboard
+- Stage manager with spoiler-safe publish flow
+- Player display route that only shows the live background image
 
-## Code scaffolding
+## Local Development
 
-Angular CLI includes powerful code scaffolding tools. To generate a new component, run:
-
-```bash
-ng generate component component-name
-```
-
-For a complete list of available schematics (such as `components`, `directives`, or `pipes`), run:
-
-```bash
-ng generate --help
-```
-
-## Building
-
-To build the project run:
+Install dependencies:
 
 ```bash
-ng build
+npm install
 ```
 
-This will compile your project and store the build artifacts in the `dist/` directory. By default, the production build optimizes your application for performance and speed.
-
-## Running unit tests
-
-To execute unit tests with the [Vitest](https://vitest.dev/) test runner, use the following command:
+Run frontend and backend together:
 
 ```bash
-ng test
+npm start
 ```
 
-## Running end-to-end tests
+Default ports:
 
-For end-to-end (e2e) testing, run:
+- Frontend: `http://localhost:4200`
+- Backend: `http://localhost:3000`
+
+If port `3000` is already in use on your machine, override it:
 
 ```bash
-ng e2e
+PORT=3100 npm run start:backend
 ```
 
-Angular CLI does not come with an end-to-end testing framework by default. You can choose one that suits your needs.
+The Angular dev server proxies `/api` and `/uploads` to the backend through `proxy.conf.json`.
 
-## Additional Resources
+## Scripts
 
-For more information on using the Angular CLI, including detailed command references, visit the [Angular CLI Overview and Command Reference](https://angular.dev/tools/cli) page.
+```bash
+npm start
+npm run start:frontend
+npm run start:backend
+npm run build
+npm run build:backend
+npm test
+```
+
+## Storage and Git
+
+Runtime data is intentionally not tracked in Git:
+
+- `backend/data/`
+- `backend/uploads/`
+
+These paths are ignored in `.gitignore` so local session data and uploaded scene images stay out of source control.
+
+## Main Routes
+
+- `/sessions`
+- `/sessions/:sessionId`
+- `/sessions/:sessionId/rolls`
+- `/sessions/:sessionId/combats/new`
+- `/sessions/:sessionId/combats/:combatId`
+- `/sessions/:sessionId/combats/:combatId/summary`
+- `/gm/stage-manager/:sessionId`
+- `/display/:sessionId`
+
+## Build Verification
+
+The current implementation is verified with:
+
+```bash
+npm run build
+npm run build:backend
+```
