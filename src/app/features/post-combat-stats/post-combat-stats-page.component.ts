@@ -16,7 +16,7 @@ import { CombatStore } from '../combat-tracker/combat.store';
         </div>
       </section>
 
-      <section class="card">
+      <section class="card" data-tour="combat-summary-table">
         <div class="card-header">
           <h3>Scoreboard</h3>
           <span class="pill">{{ store.summary()!.rows.length }} rows</span>
@@ -55,7 +55,7 @@ import { CombatStore } from '../combat-tracker/combat.store';
         </div>
       </section>
 
-      <section class="card">
+      <section class="card" data-tour="combat-summary-log">
         <div class="card-header">
           <h3>Full combat log</h3>
           <span class="pill">{{ store.summary()!.fullLog.length }}</span>

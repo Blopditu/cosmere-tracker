@@ -103,6 +103,14 @@ button:hover,
   color: #ffd4db;
 }
 
+.icon-button {
+  min-width: 46px;
+  width: 46px;
+  padding: 0;
+  border-radius: 999px;
+  font-weight: 700;
+}
+
 input,
 select,
 textarea {
@@ -398,6 +406,65 @@ label span {
   place-items: center;
   font-size: 2rem;
   color: white;
+}
+
+.tour-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  border: 0;
+  background: rgb(3 5 14 / 0.7);
+  cursor: pointer;
+}
+
+.tour-spotlight {
+  position: fixed;
+  z-index: 1201;
+  border: 2px solid var(--accent-gold-strong);
+  border-radius: var(--radius-md);
+  box-shadow:
+    0 0 0 9999px rgb(3 5 14 / 0.58),
+    0 0 0 1px rgb(224 186 111 / 0.28),
+    0 0 32px rgb(224 186 111 / 0.35);
+  pointer-events: none;
+  transition:
+    top 180ms ease,
+    left 180ms ease,
+    width 180ms ease,
+    height 180ms ease;
+}
+
+.tour-card {
+  position: fixed;
+  z-index: 1202;
+  width: min(360px, calc(100vw - 48px));
+  padding: 1.15rem;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--accent-border);
+  background: linear-gradient(180deg, rgb(25 33 77 / 0.98), rgb(15 21 51 / 0.98));
+  box-shadow: 0 28px 60px rgb(1 2 8 / 0.55);
+}
+
+.tour-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.tour-card p {
+  margin: 0.65rem 0 1rem;
+  color: var(--text-muted);
+}
+
+.tour-close {
+  min-height: auto;
+  min-width: auto;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
 }
 
 .table-wrap {

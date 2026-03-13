@@ -25,7 +25,7 @@ import { CombatStore } from './combat.store';
       </section>
 
       <div class="combat-layout">
-        <aside class="card">
+        <aside class="card" data-tour="combat-participants">
           <div class="card-header">
             <h3>Participants</h3>
             <span class="pill">Round {{ store.combat()!.currentRoundNumber || 1 }}</span>
@@ -40,7 +40,7 @@ import { CombatStore } from './combat.store';
           </div>
         </aside>
 
-        <section class="card">
+        <section class="card" data-tour="combat-turn-groups">
           <div class="card-header">
             <h3>Turn groups</h3>
             <span class="pill">{{ store.combat()!.turns.length }} turns</span>
@@ -62,7 +62,7 @@ import { CombatStore } from './combat.store';
           </div>
         </section>
 
-        <section class="card">
+        <section class="card" data-tour="combat-action-logger">
           <div class="card-header">
             <h3>Quick action logger</h3>
             <span class="pill">{{ selectedTurn()?.turnType || 'Select turn' }}</span>
@@ -128,7 +128,7 @@ import { CombatStore } from './combat.store';
         </section>
       </div>
 
-      <section class="card">
+      <section class="card" data-tour="combat-feed">
         <div class="card-header">
           <h3>Combat event feed</h3>
           <span class="pill">{{ store.combat()!.actionEvents.length }}</span>

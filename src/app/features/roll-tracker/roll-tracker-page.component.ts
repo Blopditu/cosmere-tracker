@@ -19,7 +19,7 @@ import { RollTrackerStore } from './roll-tracker.store';
     </section>
 
     <div class="layout-columns wide">
-      <section class="card">
+      <section class="card" data-tour="roll-form">
         <div class="card-header">
           <h3>Log roll</h3>
           <span class="pill">Total {{ total() }}</span>
@@ -85,7 +85,7 @@ import { RollTrackerStore } from './roll-tracker.store';
         </form>
       </section>
 
-      <section class="card">
+      <section class="card" data-tour="roll-analytics">
         <div class="card-header">
           <h3>Session analytics</h3>
           <span class="pill">{{ store.analytics()?.totalRolls || 0 }} rolls</span>
@@ -125,7 +125,7 @@ import { RollTrackerStore } from './roll-tracker.store';
       </section>
     </div>
 
-    <section class="card">
+    <section class="card" data-tour="roll-history">
       <div class="card-header">
         <h3>Recent roll history</h3>
         <span class="pill">{{ store.rolls().length }}</span>

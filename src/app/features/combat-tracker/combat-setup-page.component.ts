@@ -35,7 +35,7 @@ import { CombatStore } from './combat.store';
         </label>
 
         <div class="full-width split-grid">
-          <div class="card inset-panel">
+          <div class="card inset-panel" data-tour="combat-setup-participants">
             <h3>Participants</h3>
             <div class="list-stack">
               @for (participant of participants(); track participant.participantId) {
@@ -50,7 +50,7 @@ import { CombatStore } from './combat.store';
             </div>
           </div>
 
-          <div class="card inset-panel">
+          <div class="card inset-panel" data-tour="combat-setup-round">
             <h3>Round one assignments</h3>
             <div class="assignment-grid">
               <label>

@@ -4,10 +4,12 @@ import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, NavigationEnd, Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import { filter } from 'rxjs';
 import { SessionStoreService } from './session-store.service';
+import { TourOverlayComponent } from './tour-overlay.component';
+import { TourRouteKey, TourService } from './tour.service';
 
 @Component({
   selector: 'app-shell-layout',
-  imports: [CommonModule, FormsModule, RouterLink, RouterLinkActive, RouterOutlet],
+  imports: [CommonModule, FormsModule, RouterLink, RouterLinkActive, RouterOutlet, TourOverlayComponent],
   template: `
     <div class="app-shell">
       <header class="topbar">
@@ -17,7 +19,7 @@ import { SessionStoreService } from './session-store.service';
         </div>
 
         <div class="topbar-actions">
-          <label class="compact-field">
+          <label class="compact-field" data-tour="session-switcher">
             <span>Active session</span>
             <select [ngModel]="currentSessionId()" (ngModelChange)="goToSession($event)">
               <option value="">Choose session</option>
@@ -27,13 +29,14 @@ import { SessionStoreService } from './session-store.service';
             </select>
           </label>
           <a class="button-outline" routerLink="/sessions">Sessions</a>
+          <button type="button" class="icon-button" data-tour="help-button" (click)="startTour()" aria-label="Open guided tour">?</button>
         </div>
       </header>
 
       <div class="shell-divider"></div>
 
       <div class="shell-grid">
-        <aside class="module-nav card">
+        <aside class="module-nav card" data-tour="module-nav">
           <a routerLink="/sessions" routerLinkActive="active" [routerLinkActiveOptions]="{ exact: true }">Session index</a>
           <a [routerLink]="sessionRoute()" routerLinkActive="active">Dashboard</a>
           <a [routerLink]="rollRoute()" routerLinkActive="active">Roll tracker</a>
@@ -46,10 +49,13 @@ import { SessionStoreService } from './session-store.service';
         </main>
       </div>
     </div>
+
+    <app-tour-overlay />
   `,
 })
 export class ShellLayoutComponent {
   readonly store = inject(SessionStoreService);
+  private readonly tour = inject(TourService);
   private readonly router = inject(Router);
   private readonly activatedRoute = inject(ActivatedRoute);
   private readonly destroyRef = inject(DestroyRef);
@@ -78,7 +84,10 @@ export class ShellLayoutComponent {
     };
 
     syncRoute();
-    const sub = this.router.events.pipe(filter((event) => event instanceof NavigationEnd)).subscribe(() => syncRoute());
+    const sub = this.router.events.pipe(filter((event) => event instanceof NavigationEnd)).subscribe(() => {
+      this.tour.close();
+      syncRoute();
+    });
     this.destroyRef.onDestroy(() => sub.unsubscribe());
   }
 
@@ -88,5 +97,24 @@ export class ShellLayoutComponent {
       return;
     }
     void this.router.navigate(['/sessions', sessionId]);
+  }
+
+  startTour(): void {
+    const url = this.router.url;
+    const routeKey: TourRouteKey = url.includes('/gm/stage-manager/')
+      ? 'stageManager'
+      : url.includes('/combats/') && url.includes('/summary')
+        ? 'combatSummary'
+        : url.includes('/combats/new')
+          ? 'combatSetup'
+          : url.includes('/combats/')
+            ? 'combatTracker'
+            : url.includes('/rolls')
+              ? 'rolls'
+              : /^\/sessions\/[^/]+$/.test(url)
+                ? 'dashboard'
+                : 'sessions';
+
+    this.tour.start(routeKey);
   }
 }

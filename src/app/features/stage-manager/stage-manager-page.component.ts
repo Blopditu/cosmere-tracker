@@ -17,12 +17,12 @@ import { StageManagerStore } from './stage-manager.store';
       </div>
       <div class="button-row">
         <button type="button" (click)="openDisplay()">Open player display</button>
-        <button type="button" class="button-outline" [disabled]="!selectedScene()" (click)="publish()">Go live</button>
+        <button type="button" class="button-outline" data-tour="stage-publish" [disabled]="!selectedScene()" (click)="publish()">Go live</button>
       </div>
     </section>
 
     <div class="stage-grid">
-      <section class="card">
+      <section class="card" data-tour="stage-scenes">
         <div class="card-header">
           <h3>Scenes</h3>
           <button type="button" class="button-outline" (click)="newScene()">Add scene</button>
@@ -37,7 +37,7 @@ import { StageManagerStore } from './stage-manager.store';
         </div>
       </section>
 
-      <section class="card stage-preview">
+      <section class="card stage-preview" data-tour="stage-preview">
         <div class="card-header">
           <h3>Preview</h3>
           <span class="pill">Live: {{ liveTitle() }}</span>
@@ -45,7 +45,7 @@ import { StageManagerStore } from './stage-manager.store';
         <div class="scene-preview" [style.background-image]="previewImage()"></div>
       </section>
 
-      <section class="card">
+      <section class="card" data-tour="stage-editor">
         <div class="card-header">
           <h3>Scene editor</h3>
           <span class="pill">{{ selectedScene() ? 'Selected' : 'Draft' }}</span>

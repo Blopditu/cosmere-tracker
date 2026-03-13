@@ -33,7 +33,7 @@ function parseRosterLines(value: string, side: 'pc' | 'enemy'): Array<Omit<Party
     </section>
 
     <div class="layout-columns">
-      <section class="card">
+      <section class="card" data-tour="session-create">
         <div class="card-header">
           <h3>New session</h3>
           <span class="pill">Fresh v2 backend</span>
@@ -70,7 +70,7 @@ function parseRosterLines(value: string, side: 'pc' | 'enemy'): Array<Omit<Party
         </form>
       </section>
 
-      <section class="card">
+      <section class="card" data-tour="session-list">
         <div class="card-header">
           <h3>All sessions</h3>
           <span class="pill">{{ store.sessions().length }}</span>

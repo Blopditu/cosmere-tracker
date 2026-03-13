@@ -15,7 +15,7 @@ import { SessionStoreService } from '../../core/session-store.service';
           <h2>{{ dashboard()!.session.title }}</h2>
           <p>{{ dashboard()!.session.notes || 'No GM notes yet.' }}</p>
         </div>
-        <div class="button-row">
+        <div class="button-row" data-tour="dashboard-actions">
           <a [routerLink]="['/sessions', dashboard()!.session.id, 'rolls']">Open rolls</a>
           <a [routerLink]="['/sessions', dashboard()!.session.id, 'combats', 'new']" class="button-outline">New combat</a>
           <a [routerLink]="['/gm/stage-manager', dashboard()!.session.id]" class="button-outline">Stage manager</a>
@@ -42,7 +42,7 @@ import { SessionStoreService } from '../../core/session-store.service';
       </div>
 
       <div class="layout-columns">
-        <section class="card">
+        <section class="card" data-tour="dashboard-party">
           <div class="card-header">
             <h3>Party overview</h3>
             <span class="pill">Session cast</span>
@@ -78,7 +78,7 @@ import { SessionStoreService } from '../../core/session-store.service';
         </section>
       </div>
 
-      <section class="card">
+      <section class="card" data-tour="dashboard-combats">
         <div class="card-header">
           <h3>Recent combats</h3>
           <span class="pill">{{ dashboard()!.recentCombats.length }}</span>
