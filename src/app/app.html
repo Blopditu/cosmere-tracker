@@ -1,0 +1,22 @@
+<div class="shell">
+  <aside class="sidebar">
+    <div>
+      <p class="eyebrow">Cosmere Combat Tracker</p>
+      <h1>Session ops</h1>
+      <p class="sidebar-copy">
+        Fast dice and damage logging for party vs enemy fights, with local JSON persistence and recap screens.
+      </p>
+    </div>
+
+    <nav class="nav-list">
+      <a routerLink="/sessions" routerLinkActive="active">Sessions <span>{{ activeCount() }}</span></a>
+      <a routerLink="/roster" routerLinkActive="active">Roster</a>
+      <a routerLink="/analytics" routerLinkActive="active">Analytics</a>
+      <a routerLink="/settings" routerLinkActive="active">Settings</a>
+    </nav>
+  </aside>
+
+  <main class="content">
+    <router-outlet />
+  </main>
+</div>
