@@ -39,7 +39,7 @@ const BASE_STEPS: TourStep[] = [
   },
   {
     title: 'Move between modules',
-    description: 'The left rail is your GM workflow: sessions, dashboard, rolls, combat setup, and stage management.',
+    description: 'The session rail keeps the main GM destinations one click away without dominating the page itself.',
     selector: '[data-tour="module-nav"]',
     placement: 'right',
   },
@@ -49,12 +49,12 @@ const ROUTE_STEPS: Record<TourRouteKey, TourStep[]> = {
   sessions: [
     {
       title: 'Create the next session',
-      description: 'Start here when you are prepping or opening a new table night. Add party members and enemy templates up front.',
+      description: 'Forge the next session here with party seeds, enemy reserve entries, and enough notes to open the night cleanly.',
       selector: '[data-tour="session-create"]',
     },
     {
       title: 'Open existing sessions',
-      description: 'Use the session list to jump back into a previous night, delete a stale draft, or pick up an unfinished combat.',
+      description: 'The ledger keeps every campaign record close at hand for reopening, exporting, or clearing stale drafts.',
       selector: '[data-tour="session-list"]',
       placement: 'left',
     },
@@ -62,13 +62,19 @@ const ROUTE_STEPS: Record<TourRouteKey, TourStep[]> = {
   dashboard: [
     {
       title: 'Use the dashboard as your hub',
-      description: 'These quick actions branch straight into rolls, combat, or stage display for the current session.',
+      description: 'Use these command links to jump into rolls, a new combat, or the stage console for the active session.',
       selector: '[data-tour="dashboard-actions"]',
       placement: 'bottom',
     },
     {
+      title: 'Switch between party and enemies',
+      description: 'The roster editor now stays focused: edit the party or enemy reserve in one surface, then save both together.',
+      selector: '[data-tour="dashboard-roster"]',
+      placement: 'bottom',
+    },
+    {
       title: 'Track the party at a glance',
-      description: 'Keep the current cast visible here so you can confirm roles and focus baselines before things get hectic.',
+      description: 'Keep the current cast visible here so roles and focus baselines stay readable before the table gets noisy.',
       selector: '[data-tour="dashboard-party"]',
     },
     {
@@ -81,12 +87,18 @@ const ROUTE_STEPS: Record<TourRouteKey, TourStep[]> = {
   rolls: [
     {
       title: 'Log every d20 quickly',
-      description: 'This form is for all session rolls, including out-of-combat checks and combat-linked attacks.',
+      description: 'This quick log is for every session d20, whether it came from combat, exploration, or a quick table ruling.',
       selector: '[data-tour="roll-form"]',
     },
     {
+      title: 'Open advanced context only when needed',
+      description: 'Keep the quick log dense during play, and expand the advanced section only for advantage notes or extra context.',
+      selector: '[data-tour="roll-advanced"]',
+      placement: 'bottom',
+    },
+    {
       title: 'Watch player luck over time',
-      description: 'These analytics show volume, average raw d20s, nat 20s, nat 1s, and attack accuracy.',
+      description: 'The analytics stay secondary to the ledger, but they still show luck swings, nat spikes, and attack accuracy.',
       selector: '[data-tour="roll-analytics"]',
       placement: 'left',
     },
@@ -100,12 +112,12 @@ const ROUTE_STEPS: Record<TourRouteKey, TourStep[]> = {
   combatSetup: [
     {
       title: 'Build the encounter roster',
-      description: 'This panel combines party members and enemy templates into the combat-ready participant list.',
+      description: 'Use the encounter builder to combine the party with enemy reserve copies and tune starting HP, focus, and names.',
       selector: '[data-tour="combat-setup-participants"]',
     },
     {
-      title: 'Assign fast and slow turns',
-      description: 'Round one assignments determine who gets 2 actions and who gets 3 actions at the start of the fight.',
+      title: 'Assign fast and slow tempo inline',
+      description: 'Set each participant to Fast or Slow directly in the roster instead of juggling separate multi-select lists.',
       selector: '[data-tour="combat-setup-round"]',
       placement: 'left',
     },
@@ -113,18 +125,18 @@ const ROUTE_STEPS: Record<TourRouteKey, TourStep[]> = {
   combatTracker: [
     {
       title: 'Monitor live participants',
-      description: 'This sidebar keeps current HP and focus visible so you can update state without hunting around.',
+      description: 'The unit ledger keeps HP and focus close so you can update state without leaving the tactical board.',
       selector: '[data-tour="combat-participants"]',
     },
     {
       title: 'Follow the round structure',
-      description: 'Turns are grouped by Fast PCs, Fast NPCs, Slow PCs, and Slow NPCs to match the Cosmere combat cadence.',
+      description: 'The tactical board groups Fast PCs, Fast NPCs, Slow PCs, and Slow NPCs to match the Cosmere combat cadence.',
       selector: '[data-tour="combat-turn-groups"]',
       placement: 'left',
     },
     {
       title: 'Log actions from the selected turn',
-      description: 'Use the quick logger for attacks, support actions, reactions, focus costs, and linked d20 rolls.',
+      description: 'The command slab is the live turn console for attacks, support actions, reactions, focus costs, and linked d20s.',
       selector: '[data-tour="combat-action-logger"]',
       placement: 'left',
     },
@@ -151,12 +163,12 @@ const ROUTE_STEPS: Record<TourRouteKey, TourStep[]> = {
   stageManager: [
     {
       title: 'Organize your scenes',
-      description: 'The left column is your running order. Select, duplicate, reorder, or delete scene entries here.',
+      description: 'The cue ledger is your running order. Select, duplicate, reorder, or remove scene entries here.',
       selector: '[data-tour="stage-scenes"]',
     },
     {
       title: 'Preview what you are editing',
-      description: 'The middle preview is GM-only. It does not affect the player display until you explicitly publish.',
+      description: 'The middle preview is GM-only. It does not affect the player display until you explicitly go live.',
       selector: '[data-tour="stage-preview"]',
       placement: 'left',
     },
@@ -168,7 +180,7 @@ const ROUTE_STEPS: Record<TourRouteKey, TourStep[]> = {
     },
     {
       title: 'Publish only when ready',
-      description: 'This is the spoiler-safe trigger. Only Go live updates the player screen.',
+      description: 'This is the spoiler-safe trigger. Draft edits stay private until you deliberately publish them.',
       selector: '[data-tour="stage-publish"]',
       placement: 'bottom',
     },
@@ -243,7 +255,17 @@ export class TourService {
     }
 
     if (shouldScroll) {
-      element.scrollIntoView({ block: 'center', inline: 'center', behavior: 'smooth' });
+      const viewportHeight = this.document.defaultView?.innerHeight ?? 0;
+      const viewportWidth = this.document.defaultView?.innerWidth ?? 0;
+      const currentRect = element.getBoundingClientRect();
+      const outOfView =
+        currentRect.top < 24 ||
+        currentRect.left < 24 ||
+        currentRect.bottom > viewportHeight - 24 ||
+        currentRect.right > viewportWidth - 24;
+      if (outOfView) {
+        element.scrollIntoView({ block: 'center', inline: 'center', behavior: 'smooth' });
+      }
     }
     const rect = element.getBoundingClientRect();
     const padding = 10;

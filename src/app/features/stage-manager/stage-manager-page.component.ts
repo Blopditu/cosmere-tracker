@@ -3,52 +3,120 @@ import { Component, DestroyRef, computed, inject, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute } from '@angular/router';
 import { StageScene } from '@shared/domain';
+import { RosharIconComponent } from '../../shared/roshar-icon.component';
 import { StageManagerStore } from './stage-manager.store';
 
 @Component({
   selector: 'app-stage-manager-page',
-  imports: [CommonModule, ReactiveFormsModule],
+  imports: [CommonModule, ReactiveFormsModule, RosharIconComponent],
   template: `
-    <section class="page-header">
-      <div>
+    <section class="page-header stage-manager-header card engraved-panel">
+      <div class="route-heading">
         <p class="eyebrow">Stage manager</p>
-        <h2>Spoiler-safe player display</h2>
-        <p>Editing scenes never changes the player display. Only the publish button updates the live screen.</p>
+        <h2>Cue deck and live display</h2>
+        <p>Editing scenes never changes the player display. Only publish updates the live screen, so draft and live always stay separate.</p>
       </div>
-      <div class="button-row">
-        <button type="button" (click)="openDisplay()">Open player display</button>
-        <button type="button" class="button-outline" data-tour="stage-publish" [disabled]="!selectedScene()" (click)="publish()">Go live</button>
+      <div class="stage-header-actions">
+        <div class="stage-live-status">
+          <span class="tag-chip live-chip">
+            <app-roshar-icon key="live" label="Current live scene" tone="emerald" [size]="14" />
+            Live: {{ liveTitle() }}
+          </span>
+        </div>
+        <div class="button-row">
+        <button type="button" class="shell-shortcut" (click)="openDisplay()">
+          <app-roshar-icon key="live" label="Open player display" tone="gold" [size]="16" />
+          <span>Open player display</span>
+        </button>
+        <button type="button" class="button-outline shell-shortcut" (click)="openFullscreenDisplay()">
+          <app-roshar-icon key="live" label="Open fullscreen display" tone="topaz" [size]="16" />
+          <span>Open fullscreen display</span>
+        </button>
+        <button
+          type="button"
+          class="button-outline shell-shortcut live-trigger"
+          data-tour="stage-publish"
+          [disabled]="!selectedScene() || store.uploadState() === 'uploading'"
+          (click)="publish()"
+        >
+          <app-roshar-icon key="live" label="Go live" tone="emerald" [size]="16" />
+          <span>Go live</span>
+        </button>
+        </div>
       </div>
     </section>
 
-    <div class="stage-grid">
-      <section class="card" data-tour="stage-scenes">
+    <div class="stage-grid stage-console">
+      <section class="card engraved-panel" data-tour="stage-scenes">
         <div class="card-header">
-          <h3>Scenes</h3>
-          <button type="button" class="button-outline" (click)="newScene()">Add scene</button>
+          <div class="section-heading">
+            <app-roshar-icon key="stage" label="Scenes" tone="sapphire" [size]="18" />
+            <h3>Scenes</h3>
+          </div>
+          <button type="button" class="button-outline shell-shortcut" (click)="newScene()">
+            <app-roshar-icon key="aid" label="Add scene" tone="gold" [size]="14" />
+            <span>Add scene</span>
+          </button>
         </div>
         <div class="list-stack">
           @for (scene of store.scenes(); track scene.id) {
-            <button class="list-item-button" type="button" [class.active]="selectedSceneId() === scene.id" (click)="selectScene(scene)">
-              <span>{{ scene.title }}</span>
-              <span>#{{ scene.order }}</span>
+            <button
+              class="list-item-button scene-ledger"
+              type="button"
+              draggable="true"
+              [class.active]="selectedSceneId() === scene.id"
+              (click)="selectScene(scene)"
+              (dragstart)="dragStart(scene.id)"
+              (dragover)="allowDrop($event)"
+              (drop)="dropOn(scene.id)"
+            >
+              <div class="scene-thumb" [style.background-image]="scene.backgroundImagePath ? 'url(' + scene.backgroundImagePath + ')' : 'none'"></div>
+              <div>
+                <strong class="event-line">
+                  <app-roshar-icon key="stage" [label]="scene.title" tone="sapphire" [size]="16" />
+                  {{ scene.title }}
+                </strong>
+                <small>#{{ scene.order }}</small>
+              </div>
+              <span class="tag-chip" [class.live-chip]="store.liveState()?.liveSceneId === scene.id">
+                <app-roshar-icon [key]="store.liveState()?.liveSceneId === scene.id ? 'live' : 'chronicle'" [label]="store.liveState()?.liveSceneId === scene.id ? 'Live scene' : 'Draft scene'" [tone]="store.liveState()?.liveSceneId === scene.id ? 'emerald' : 'muted'" [size]="14" />
+                {{ store.liveState()?.liveSceneId === scene.id ? 'Live' : 'Draft' }}
+              </span>
             </button>
+          } @empty {
+            <article class="empty-card">No scenes in the cue deck yet. Add one, upload art, and publish only when the table is ready.</article>
           }
         </div>
       </section>
 
-      <section class="card stage-preview" data-tour="stage-preview">
+      <section class="card stage-preview engraved-panel" data-tour="stage-preview">
         <div class="card-header">
-          <h3>Preview</h3>
+          <div class="section-heading">
+            <app-roshar-icon key="live" label="Preview" tone="topaz" [size]="18" />
+            <h3>Preview</h3>
+          </div>
           <span class="pill">Live: {{ liveTitle() }}</span>
         </div>
-        <div class="scene-preview" [style.background-image]="previewImage()"></div>
+        <div class="scene-preview stage-atmosphere" [style.background-image]="previewImage()"></div>
       </section>
 
-      <section class="card" data-tour="stage-editor">
+      <section class="card engraved-panel" data-tour="stage-editor">
         <div class="card-header">
-          <h3>Scene editor</h3>
+          <div class="section-heading">
+            <app-roshar-icon key="chronicle" label="Scene editor" tone="gold" [size]="18" />
+            <h3>Scene editor</h3>
+          </div>
           <span class="pill">{{ selectedScene() ? 'Selected' : 'Draft' }}</span>
+        </div>
+        <div class="publish-state-bar">
+          <span class="tag-chip">
+            <app-roshar-icon key="chronicle" label="Editing" tone="topaz" [size]="14" />
+            Editing: {{ selectedScene()?.title || 'New draft' }}
+          </span>
+          <span class="tag-chip live-chip">
+            <app-roshar-icon key="live" label="Live scene" tone="emerald" [size]="14" />
+            Live: {{ liveTitle() }}
+          </span>
         </div>
         <form class="form-grid" [formGroup]="form" (ngSubmit)="save()">
           <label class="full-width">
@@ -59,6 +127,22 @@ import { StageManagerStore } from './stage-manager.store';
             <span>Background image</span>
             <input type="file" accept="image/*" (change)="upload($event)" />
           </label>
+          @if (store.uploadFileName()) {
+            <div class="full-width upload-status-row">
+              <span class="tag-chip">
+                <app-roshar-icon
+                  key="chronicle"
+                  label="Upload state"
+                  [tone]="store.uploadState() === 'error' ? 'ruby' : store.uploadState() === 'uploaded' ? 'emerald' : 'topaz'"
+                  [size]="14"
+                />
+                {{ store.uploadState() }}: {{ store.uploadFileName() }}
+              </span>
+              @if (store.uploadError()) {
+                <span class="tag-chip shell-error-chip">{{ store.uploadError() }}</span>
+              }
+            </div>
+          }
           <label class="full-width">
             <span>YouTube reference</span>
             <input formControlName="youtubeUrl" type="url" />
@@ -67,12 +151,42 @@ import { StageManagerStore } from './stage-manager.store';
             <span>GM notes</span>
             <textarea formControlName="gmNotes" rows="5"></textarea>
           </label>
-          <div class="button-row full-width">
-            <button type="submit">Save scene</button>
-            <button type="button" class="button-outline" [disabled]="!selectedScene()" (click)="duplicate()">Duplicate</button>
-            <button type="button" class="button-outline" [disabled]="!selectedScene()" (click)="move(-1)">Move up</button>
-            <button type="button" class="button-outline" [disabled]="!selectedScene()" (click)="move(1)">Move down</button>
-            <button type="button" class="button-outline button-danger" [disabled]="!selectedScene()" (click)="remove()">Delete</button>
+          <div class="editor-action-groups full-width">
+            <div class="editor-action-group">
+              <p class="eyebrow">Save</p>
+              <div class="button-row">
+              <button type="submit" class="shell-shortcut">
+                <app-roshar-icon key="aid" label="Save scene" tone="gold" [size]="16" />
+                <span>Save scene</span>
+              </button>
+              </div>
+            </div>
+            <div class="editor-action-group">
+              <p class="eyebrow">Scene management</p>
+              <div class="button-row">
+                <button type="button" class="button-outline shell-shortcut" [disabled]="!selectedScene()" (click)="duplicate()">
+                  <app-roshar-icon key="chronicle" label="Duplicate" tone="topaz" [size]="16" />
+                  <span>Duplicate</span>
+                </button>
+                <button type="button" class="button-outline shell-shortcut" [disabled]="!selectedScene()" (click)="move(-1)">
+                  <app-roshar-icon key="fast" label="Move up" tone="topaz" [size]="16" />
+                  <span>Move up</span>
+                </button>
+                <button type="button" class="button-outline shell-shortcut" [disabled]="!selectedScene()" (click)="move(1)">
+                  <app-roshar-icon key="slow" label="Move down" tone="sapphire" [size]="16" />
+                  <span>Move down</span>
+                </button>
+              </div>
+            </div>
+            <div class="editor-action-group editor-action-group-danger">
+              <p class="eyebrow">Danger</p>
+              <div class="button-row">
+                <button type="button" class="button-outline button-danger shell-shortcut" [disabled]="!selectedScene()" (click)="remove()">
+                  <app-roshar-icon key="damage" label="Delete" tone="ruby" [size]="16" />
+                  <span>Delete</span>
+                </button>
+              </div>
+            </div>
           </div>
         </form>
       </section>
@@ -86,6 +200,7 @@ export class StageManagerPageComponent {
   private readonly fb = inject(FormBuilder);
   readonly sessionId = signal('');
   readonly selectedSceneId = signal('');
+  readonly dragSceneId = signal('');
   readonly selectedScene = computed(() => this.store.scenes().find((scene) => scene.id === this.selectedSceneId()) ?? null);
   readonly liveTitle = computed(() => {
     const liveId = this.store.liveState()?.liveSceneId;
@@ -222,5 +337,33 @@ export class StageManagerPageComponent {
 
   openDisplay(): void {
     window.open(`/display/${this.sessionId()}`, '_blank');
+  }
+
+  openFullscreenDisplay(): void {
+    window.open(`/display/${this.sessionId()}`, 'cosmere-player-display', 'popup=yes,width=1600,height=900');
+  }
+
+  dragStart(sceneId: string): void {
+    this.dragSceneId.set(sceneId);
+  }
+
+  allowDrop(event: DragEvent): void {
+    event.preventDefault();
+  }
+
+  async dropOn(targetSceneId: string): Promise<void> {
+    const sourceSceneId = this.dragSceneId();
+    this.dragSceneId.set('');
+    if (!sourceSceneId || sourceSceneId === targetSceneId) {
+      return;
+    }
+    const orderedIds = this.store.scenes().map((scene) => scene.id);
+    const sourceIndex = orderedIds.indexOf(sourceSceneId);
+    const targetIndex = orderedIds.indexOf(targetSceneId);
+    if (sourceIndex < 0 || targetIndex < 0) {
+      return;
+    }
+    orderedIds.splice(targetIndex, 0, orderedIds.splice(sourceIndex, 1)[0]!);
+    await this.store.reorder(this.sessionId(), orderedIds);
   }
 }

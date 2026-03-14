@@ -1,10 +1,11 @@
 export type ParticipantSide = 'pc' | 'npc' | 'enemy' | 'ally';
 export type RollCategory = 'attack' | 'skill' | 'defense' | 'recovery' | 'injury' | 'generic';
-export type RollOutcome = 'success' | 'failure' | 'criticalSuccess' | 'criticalFailure' | 'neutral';
+export type RollOutcome = 'success' | 'failure' | 'criticalSuccess' | 'criticalFailure' | 'graze' | 'neutral';
 export type CombatStatus = 'planned' | 'active' | 'finished';
 export type TurnType = 'fast' | 'slow';
 export type ActionKind = 'action' | 'reaction' | 'free';
 export type ConditionOperation = 'add' | 'remove';
+export type HitResult = 'hit' | 'miss' | 'criticalHit' | 'criticalMiss' | 'graze' | 'support' | 'neutral';
 
 export interface SessionEntity {
   id: string;
@@ -12,8 +13,7 @@ export interface SessionEntity {
   notes?: string;
   createdAt: string;
   updatedAt: string;
-  partyMembers: PartyMember[];
-  participantTemplates: ParticipantTemplate[];
+  playerIds: string[];
 }
 
 export interface SessionSummary {
@@ -22,8 +22,9 @@ export interface SessionSummary {
   notes?: string;
   createdAt: string;
   updatedAt: string;
+  playerIds: string[];
   partyMembers: PartyMember[];
-  participantTemplates: ParticipantTemplate[];
+  enemyTemplateCount: number;
   stageSceneCount: number;
   combatCount: number;
   rollCount: number;
@@ -31,7 +32,6 @@ export interface SessionSummary {
 
 export interface PartyMember {
   id: string;
-  sessionId: string;
   name: string;
   side: ParticipantSide;
   role?: string;
@@ -43,7 +43,6 @@ export interface PartyMember {
 
 export interface ParticipantTemplate {
   id: string;
-  sessionId: string;
   name: string;
   side: ParticipantSide;
   role?: string;
@@ -92,6 +91,7 @@ export interface CombatParticipantState {
   participantId: string;
   name: string;
   side: ParticipantSide;
+  imagePath?: string;
   maxHealth?: number;
   currentHealth?: number;
   maxFocus?: number;
@@ -141,7 +141,7 @@ export interface ActionEvent {
   actionCost: number;
   focusCost: number;
   linkedRollId?: string;
-  hitResult?: 'hit' | 'miss' | 'crit' | 'support' | 'neutral';
+  hitResult?: HitResult;
   damageAmount?: number;
   note?: string;
   timestamp: string;
@@ -164,6 +164,17 @@ export interface FocusEvent {
   participantId: string;
   delta: number;
   reason: string;
+  relatedActionEventId?: string;
+  timestamp: string;
+}
+
+export interface HealthEvent {
+  id: string;
+  combatId: string;
+  participantId: string;
+  delta: number;
+  reason: string;
+  sourceParticipantId?: string;
   relatedActionEventId?: string;
   timestamp: string;
 }
@@ -196,6 +207,7 @@ export interface CombatRecord {
   actionEvents: ActionEvent[];
   damageEvents: DamageEvent[];
   focusEvents: FocusEvent[];
+  healthEvents: HealthEvent[];
   conditionEvents: ConditionEvent[];
 }
 
@@ -219,8 +231,58 @@ export interface LiveStageState {
 
 export interface SessionDashboard {
   session: SessionSummary;
+  campaignPartyMembers: PartyMember[];
+  participantTemplates: ParticipantTemplate[];
   recentRolls: RollEvent[];
   recentCombats: CombatRecord[];
+}
+
+export interface SessionAnalyticsRow {
+  actorName: string;
+  rollCount: number;
+  averageRawD20: number;
+  nat20Count: number;
+  nat1Count: number;
+  totalDamageDealt: number;
+  totalDamageTaken: number;
+  hitCount: number;
+  missCount: number;
+  grazeCount: number;
+  hitRate: number;
+  critCount: number;
+  focusSpent: number;
+  supportActionsUsed: number;
+  reactionsUsed: number;
+  biggestHit: number;
+}
+
+export interface SessionAnalytics {
+  sessionId: string;
+  totalRolls: number;
+  totalCombats: number;
+  nat20Count: number;
+  nat1Count: number;
+  averageRawD20: number;
+  totalDamageDealt: number;
+  totalDamageTaken: number;
+  totalFocusSpent: number;
+  partyPerformance: SessionAnalyticsRow[];
+  awards: {
+    mostAccurate: string | null;
+    biggestHit: string | null;
+    mostSupportOriented: string | null;
+    focusPressureLeader: string | null;
+    mostDamageDealt: string | null;
+    mostDamageTaken: string | null;
+  };
+  recentCombatSummaries: Array<{
+    combatId: string;
+    title: string;
+    status: CombatStatus;
+    roundNumber: number;
+    topDamageDealer: string | null;
+    biggestHit: number;
+  }>;
 }
 
 export interface RollAnalytics {
@@ -242,17 +304,20 @@ export interface RollAnalytics {
 export interface CombatSummary {
   combat: CombatRecord;
   rows: CombatSummaryRow[];
-  fullLog: Array<ActionEvent | DamageEvent | FocusEvent | ConditionEvent>;
+  fullLog: Array<ActionEvent | DamageEvent | FocusEvent | HealthEvent | ConditionEvent>;
 }
 
 export interface CombatSummaryRow {
   participantId: string;
   name: string;
   side: ParticipantSide;
+  rollCount: number;
+  averageRawD20: number;
   totalDamageDealt: number;
   totalDamageTaken: number;
   hitCount: number;
   missCount: number;
+  grazeCount: number;
   hitRate: number;
   critCount: number;
   nat20Count: number;
@@ -266,13 +331,15 @@ export interface CombatSummaryRow {
 export interface CreateSessionInput {
   title: string;
   notes?: string;
-  partyMembers?: Array<Omit<PartyMember, 'id' | 'sessionId'>>;
-  participantTemplates?: Array<Omit<ParticipantTemplate, 'id' | 'sessionId'>>;
+  playerIds?: string[];
+  partyMembers?: Array<Omit<PartyMember, 'id'>>;
+  participantTemplates?: Array<Omit<ParticipantTemplate, 'id'>>;
 }
 
 export interface UpdateSessionInput {
   title?: string;
   notes?: string;
+  playerIds?: string[];
   partyMembers?: PartyMember[];
   participantTemplates?: ParticipantTemplate[];
 }
@@ -301,6 +368,7 @@ export interface CreateCombatInput {
     participantId: string;
     name: string;
     side: ParticipantSide;
+    imagePath?: string;
     maxHealth?: number;
     currentHealth?: number;
     maxFocus?: number;
@@ -340,7 +408,7 @@ export interface CreateActionEventInput {
   targetIds: string[];
   actionCost: number;
   focusCost: number;
-  hitResult?: 'hit' | 'miss' | 'crit' | 'support' | 'neutral';
+  hitResult?: HitResult;
   damageAmount?: number;
   note?: string;
   linkedRoll?: CreateRollInput;
@@ -361,6 +429,14 @@ export interface CreateFocusEventInput {
   relatedActionEventId?: string;
 }
 
+export interface CreateHealthEventInput {
+  participantId: string;
+  delta: number;
+  reason: string;
+  sourceParticipantId?: string;
+  relatedActionEventId?: string;
+}
+
 export interface CreateConditionEventInput {
   participantId: string;
   conditionName: string;
@@ -368,20 +444,67 @@ export interface CreateConditionEventInput {
   note?: string;
 }
 
+export interface RevertActionResult {
+  combat: CombatRecord;
+  revertedActionId: string;
+}
+
+export interface BackupMetadata {
+  version: number;
+  exportedAt: string;
+  format: 'cosmere-tracker-json';
+  scope: 'full-app' | 'session';
+}
+
+export interface FullAppBackup {
+  metadata: BackupMetadata;
+  data: {
+    sessions: SessionEntity[];
+    partyMembers: PartyMember[];
+    participantTemplates: ParticipantTemplate[];
+    rolls: RollEvent[];
+    combats: CombatRecord[];
+    stageScenes: StageScene[];
+    liveStageStates: LiveStageState[];
+  };
+}
+
+export interface SessionBackup {
+  metadata: BackupMetadata & {
+    scope: 'session';
+  };
+  data: {
+    session: SessionEntity;
+    partyMembers: PartyMember[];
+    participantTemplates: ParticipantTemplate[];
+    rolls: RollEvent[];
+    combats: CombatRecord[];
+    stageScenes: StageScene[];
+    liveStageState: LiveStageState | null;
+  };
+}
+
+export interface ImportResult {
+  message: string;
+  importedSessionId?: string;
+  importedSessionTitle?: string;
+  replacedCollections?: number;
+}
+
 export const ACTION_CATALOG: ActionCatalogItem[] = [
-  { key: 'strike', name: 'Strike', type: 'action', defaultActionCost: 1, defaultFocusCost: 0, requiresTarget: true, requiresRoll: true, supportsDamage: true, tags: ['attack'] },
+  { key: 'strike', name: 'Strike', type: 'action', defaultActionCost: 1, defaultFocusCost: 0, requiresTarget: true, requiresRoll: true, supportsDamage: true, tags: ['attack', 'test'] },
   { key: 'move', name: 'Move', type: 'action', defaultActionCost: 1, defaultFocusCost: 0, requiresTarget: false, requiresRoll: false, supportsDamage: false, tags: ['movement'] },
   { key: 'brace', name: 'Brace', type: 'action', defaultActionCost: 1, defaultFocusCost: 0, requiresTarget: false, requiresRoll: false, supportsDamage: false, tags: ['defense'] },
   { key: 'disengage', name: 'Disengage', type: 'action', defaultActionCost: 1, defaultFocusCost: 0, requiresTarget: false, requiresRoll: false, supportsDamage: false, tags: ['movement'] },
   { key: 'gain-advantage', name: 'Gain Advantage', type: 'action', defaultActionCost: 1, defaultFocusCost: 0, requiresTarget: false, requiresRoll: false, supportsDamage: false, tags: ['setup'] },
-  { key: 'interact-skill', name: 'Interact / Use Skill', type: 'action', defaultActionCost: 1, defaultFocusCost: 0, requiresTarget: false, requiresRoll: true, supportsDamage: false, tags: ['utility'] },
-  { key: 'grapple', name: 'Grapple', type: 'action', defaultActionCost: 1, defaultFocusCost: 0, requiresTarget: true, requiresRoll: true, supportsDamage: false, tags: ['control'] },
+  { key: 'interact-skill', name: 'Interact / Use Skill', type: 'action', defaultActionCost: 1, defaultFocusCost: 0, requiresTarget: false, requiresRoll: true, supportsDamage: false, tags: ['utility', 'test'] },
+  { key: 'grapple', name: 'Grapple', type: 'action', defaultActionCost: 1, defaultFocusCost: 0, requiresTarget: true, requiresRoll: true, supportsDamage: false, tags: ['control', 'test'] },
   { key: 'ready', name: 'Ready', type: 'action', defaultActionCost: 1, defaultFocusCost: 0, requiresTarget: false, requiresRoll: false, supportsDamage: false, tags: ['setup'] },
   { key: 'recover', name: 'Recover', type: 'action', defaultActionCost: 1, defaultFocusCost: 0, requiresTarget: false, requiresRoll: false, supportsDamage: false, tags: ['recovery'] },
-  { key: 'shove', name: 'Shove', type: 'action', defaultActionCost: 1, defaultFocusCost: 0, requiresTarget: true, requiresRoll: true, supportsDamage: false, tags: ['control'] },
-  { key: 'aid', name: 'Aid', type: 'action', defaultActionCost: 1, defaultFocusCost: 0, requiresTarget: true, requiresRoll: false, supportsDamage: false, tags: ['support'] },
+  { key: 'shove', name: 'Shove', type: 'action', defaultActionCost: 1, defaultFocusCost: 0, requiresTarget: true, requiresRoll: true, supportsDamage: false, tags: ['control', 'test'] },
+  { key: 'aid', name: 'Aid', type: 'action', defaultActionCost: 1, defaultFocusCost: 0, requiresTarget: true, requiresRoll: false, supportsDamage: false, tags: ['support', 'test'] },
   { key: 'dodge', name: 'Dodge', type: 'action', defaultActionCost: 1, defaultFocusCost: 0, requiresTarget: false, requiresRoll: false, supportsDamage: false, tags: ['defense'] },
-  { key: 'reactive-strike', name: 'Reactive Strike', type: 'reaction', defaultActionCost: 0, defaultFocusCost: 0, requiresTarget: true, requiresRoll: true, supportsDamage: true, tags: ['reaction', 'attack'] },
-  { key: 'avoid-danger', name: 'Avoid Danger', type: 'reaction', defaultActionCost: 0, defaultFocusCost: 0, requiresTarget: false, requiresRoll: true, supportsDamage: false, tags: ['reaction', 'defense'] },
+  { key: 'reactive-strike', name: 'Reactive Strike', type: 'reaction', defaultActionCost: 0, defaultFocusCost: 0, requiresTarget: true, requiresRoll: true, supportsDamage: true, tags: ['reaction', 'attack', 'test'] },
+  { key: 'avoid-danger', name: 'Avoid Danger', type: 'reaction', defaultActionCost: 0, defaultFocusCost: 0, requiresTarget: false, requiresRoll: true, supportsDamage: false, tags: ['reaction', 'defense', 'test'] },
   { key: 'custom', name: 'Custom', type: 'action', defaultActionCost: 1, defaultFocusCost: 0, requiresTarget: false, requiresRoll: false, supportsDamage: false, tags: ['custom'] },
 ];

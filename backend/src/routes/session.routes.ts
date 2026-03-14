@@ -10,5 +10,8 @@ export function createSessionRouter(controller: SessionController): Router {
   router.patch('/:sessionId', asyncHandler(controller.update));
   router.delete('/:sessionId', asyncHandler(controller.delete));
   router.get('/:sessionId/dashboard', asyncHandler(controller.dashboard));
+  router.get('/:sessionId/analytics', asyncHandler(controller.analytics));
+  router.get('/:sessionId/export', asyncHandler(controller.exportSession));
+  router.post('/import', asyncHandler(controller.importSession));
   return router;
 }

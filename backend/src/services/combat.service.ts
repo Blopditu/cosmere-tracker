@@ -11,8 +11,11 @@ import {
   CreateCombatInput,
   CreateConditionEventInput,
   CreateDamageEventInput,
+  CreateHealthEventInput,
   CreateFocusEventInput,
   CreateRoundInput,
+  HealthEvent,
+  RevertActionResult,
   UpdateTurnInput,
 } from '@shared/domain';
 import { HttpError } from '../lib/http';
@@ -60,28 +63,43 @@ function mapSourceIdsToCombatIds(
 function summarizeCombatRows(combat: CombatRecord, combatRolls: Awaited<ReturnType<RollService['listBySession']>>): CombatSummaryRow[] {
   return combat.participants.map((participant) => {
     const actionEvents = combat.actionEvents.filter((event) => event.actorId === participant.id);
-    const damageDealt = combat.damageEvents
-      .filter((event) => event.sourceParticipantId === participant.id)
-      .reduce((sum, event) => sum + event.amount, 0);
-    const damageTaken = combat.damageEvents
-      .filter((event) => event.targetParticipantId === participant.id)
-      .reduce((sum, event) => sum + event.amount, 0);
+    const healthEvents = combat.healthEvents ?? [];
+    const damageDealt =
+      combat.damageEvents
+        .filter((event) => event.sourceParticipantId === participant.id)
+        .reduce((sum, event) => sum + event.amount, 0) +
+      healthEvents
+        .filter((event) => event.sourceParticipantId === participant.id && event.delta < 0)
+        .reduce((sum, event) => sum + Math.abs(event.delta), 0);
+    const damageTaken =
+      combat.damageEvents
+        .filter((event) => event.targetParticipantId === participant.id)
+        .reduce((sum, event) => sum + event.amount, 0) +
+      healthEvents
+        .filter((event) => event.participantId === participant.id && event.delta < 0)
+        .reduce((sum, event) => sum + Math.abs(event.delta), 0);
     const combatSpecificRolls = combatRolls.filter(
       (roll) => roll.combatId === combat.id && (roll.actorId === participant.participantId || roll.actorName === participant.name),
     );
-    const hitCount = actionEvents.filter((event) => event.hitResult === 'hit' || event.hitResult === 'crit').length;
-    const missCount = actionEvents.filter((event) => event.hitResult === 'miss').length;
+    const hitCount = actionEvents.filter((event) => event.hitResult === 'hit' || event.hitResult === 'criticalHit').length;
+    const missCount = actionEvents.filter((event) => event.hitResult === 'miss' || event.hitResult === 'criticalMiss').length;
+    const grazeCount = actionEvents.filter((event) => event.hitResult === 'graze').length;
 
     return {
       participantId: participant.id,
       name: participant.name,
       side: participant.side,
+      rollCount: combatSpecificRolls.length,
+      averageRawD20: combatSpecificRolls.length
+        ? combatSpecificRolls.reduce((sum, roll) => sum + roll.rawD20, 0) / combatSpecificRolls.length
+        : 0,
       totalDamageDealt: damageDealt,
       totalDamageTaken: damageTaken,
       hitCount,
       missCount,
-      hitRate: hitCount + missCount ? hitCount / (hitCount + missCount) : 0,
-      critCount: actionEvents.filter((event) => event.hitResult === 'crit').length,
+      grazeCount,
+      hitRate: hitCount + missCount + grazeCount ? (hitCount + grazeCount) / (hitCount + missCount + grazeCount) : 0,
+      critCount: actionEvents.filter((event) => event.hitResult === 'criticalHit').length,
       nat20Count: combatSpecificRolls.filter((roll) => roll.rawD20 === 20).length,
       nat1Count: combatSpecificRolls.filter((roll) => roll.rawD20 === 1).length,
       focusSpent: combat.focusEvents
@@ -135,6 +153,7 @@ export class CombatService {
       participantId: participant.participantId,
       name: participant.name,
       side: participant.side,
+      imagePath: participant.imagePath,
       maxHealth: participant.maxHealth,
       currentHealth: participant.currentHealth,
       maxFocus: participant.maxFocus,
@@ -172,6 +191,7 @@ export class CombatService {
       actionEvents: [],
       damageEvents: [],
       focusEvents: [],
+      healthEvents: [],
       conditionEvents: [],
     };
 
@@ -415,6 +435,108 @@ export class CombatService {
     return next;
   }
 
+  async revertAction(combatId: string, actionEventId: string): Promise<RevertActionResult> {
+    const combat = await this.get(combatId);
+    const action = combat.actionEvents.find((event) => event.id === actionEventId);
+    if (!action) {
+      throw new HttpError(404, 'Action event not found.');
+    }
+
+    const relatedDamageEvents = combat.damageEvents.filter((event) => event.causedByActionEventId === actionEventId);
+    const relatedFocusEvents = combat.focusEvents.filter((event) => event.relatedActionEventId === actionEventId);
+    const relatedHealthEvents = (combat.healthEvents ?? []).filter((event) => event.relatedActionEventId === actionEventId);
+    const relatedConditionEvents = combat.conditionEvents.filter((event) => event.note === `action:${actionEventId}`);
+    const actionTurn = combat.turns.find((turn) => turn.id === action.turnId);
+    const catalogItem = ACTION_CATALOG.find((item) => item.name === action.actionType || item.key === action.actionType);
+
+    if (action.linkedRollId) {
+      await this.rollService.delete(action.linkedRollId);
+    }
+
+    const nextParticipants = combat.participants.map((participant) => {
+      let next = participant;
+      if (participant.id === action.actorId) {
+        const restoredFocus = participant.currentFocus + action.focusCost;
+        next = {
+          ...next,
+          currentFocus: Math.min(next.maxFocus ?? Number.POSITIVE_INFINITY, restoredFocus),
+        };
+      }
+
+      const restoredDamage = relatedDamageEvents
+        .filter((event) => event.targetParticipantId === participant.id)
+        .reduce((sum, event) => sum + event.amount, 0);
+      if (restoredDamage && next.currentHealth !== undefined) {
+        next = {
+          ...next,
+          currentHealth: Math.min(next.maxHealth ?? Number.POSITIVE_INFINITY, next.currentHealth + restoredDamage),
+        };
+      }
+
+      for (const event of relatedHealthEvents.filter((entry) => entry.participantId === participant.id)) {
+        if (next.currentHealth === undefined) {
+          continue;
+        }
+        next = {
+          ...next,
+          currentHealth: Math.max(
+            0,
+            Math.min(next.maxHealth ?? Number.POSITIVE_INFINITY, next.currentHealth - event.delta),
+          ),
+        };
+      }
+
+      if (relatedConditionEvents.length && participant.id === action.actorId) {
+        const set = new Set(next.conditions);
+        for (const event of relatedConditionEvents) {
+          if (event.operation === 'add') {
+            set.delete(event.conditionName);
+          } else {
+            set.add(event.conditionName);
+          }
+        }
+        next = {
+          ...next,
+          conditions: [...set],
+        };
+      }
+
+      return next;
+    });
+
+    const nextTurns = combat.turns.map((turn) => {
+      if (turn.id !== action.turnId) {
+        return turn;
+      }
+      const otherReactionEvents = combat.actionEvents.filter(
+        (event) =>
+          event.turnId === turn.id &&
+          event.id !== actionEventId &&
+          ACTION_CATALOG.find((item) => item.name === event.actionType || item.key === event.actionType)?.type === 'reaction',
+      );
+      return {
+        ...turn,
+        actionsUsed: Math.max(0, turn.actionsUsed - action.actionCost),
+        reactionUsed: catalogItem?.type === 'reaction' ? otherReactionEvents.length > 0 : turn.reactionUsed,
+        focusAtEnd: Math.max(0, turn.focusAtEnd + action.focusCost),
+        damageDealt: Math.max(0, turn.damageDealt - (action.damageAmount ?? 0)),
+      };
+    });
+
+    const next: CombatRecord = {
+      ...combat,
+      participants: nextParticipants,
+      turns: nextTurns,
+      actionEvents: combat.actionEvents.filter((event) => event.id !== actionEventId),
+      damageEvents: combat.damageEvents.filter((event) => event.causedByActionEventId !== actionEventId),
+      focusEvents: combat.focusEvents.filter((event) => event.relatedActionEventId !== actionEventId),
+      healthEvents: (combat.healthEvents ?? []).filter((event) => event.relatedActionEventId !== actionEventId),
+      conditionEvents: combat.conditionEvents.filter((event) => event.note !== `action:${actionEventId}`),
+    };
+    await this.combatRepository.upsert(next);
+    return { combat: next, revertedActionId: actionEventId };
+  }
+
   async logDamage(combatId: string, input: CreateDamageEventInput): Promise<CombatRecord> {
     const combat = await this.get(combatId);
     const event = {
@@ -468,6 +590,38 @@ export class CombatService {
     return next;
   }
 
+  async logHealth(combatId: string, input: CreateHealthEventInput): Promise<CombatRecord> {
+    const combat = await this.get(combatId);
+    const event: HealthEvent = {
+      id: randomUUID(),
+      combatId,
+      participantId: input.participantId,
+      delta: input.delta,
+      reason: input.reason,
+      sourceParticipantId: input.sourceParticipantId,
+      relatedActionEventId: input.relatedActionEventId,
+      timestamp: nowIso(),
+    };
+
+    const next: CombatRecord = {
+      ...combat,
+      healthEvents: [...(combat.healthEvents ?? []), event],
+      participants: combat.participants.map((participant) => {
+        if (participant.id !== input.participantId || participant.currentHealth === undefined) {
+          return participant;
+        }
+        const nextHealth = participant.currentHealth + input.delta;
+        const maxHealth = participant.maxHealth ?? Number.POSITIVE_INFINITY;
+        return {
+          ...participant,
+          currentHealth: Math.max(0, Math.min(maxHealth, nextHealth)),
+        };
+      }),
+    };
+    await this.combatRepository.upsert(next);
+    return next;
+  }
+
   async logCondition(combatId: string, input: CreateConditionEventInput): Promise<CombatRecord> {
     const combat = await this.get(combatId);
     const event = {
@@ -514,7 +668,7 @@ export class CombatService {
     return {
       combat,
       rows: summarizeCombatRows(combat, combatRolls),
-      fullLog: [...combat.actionEvents, ...combat.damageEvents, ...combat.focusEvents, ...combat.conditionEvents].sort(
+      fullLog: [...combat.actionEvents, ...combat.damageEvents, ...combat.focusEvents, ...(combat.healthEvents ?? []), ...combat.conditionEvents].sort(
         (left, right) => left.timestamp.localeCompare(right.timestamp),
       ),
     };

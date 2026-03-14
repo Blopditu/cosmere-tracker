@@ -7,7 +7,8 @@ export function createUploadRouter(uploadsDir: string): Router {
   const storage = multer.diskStorage({
     destination: async (request, _file, callback) => {
       const sessionId = String(request.body.sessionId || 'shared');
-      const targetDir = path.join(uploadsDir, 'stage-backgrounds', sessionId);
+      const uploadType = String(request.body.uploadType || 'stage-backgrounds');
+      const targetDir = path.join(uploadsDir, uploadType, sessionId);
       await fs.mkdir(targetDir, { recursive: true });
       callback(null, targetDir);
     },
@@ -28,6 +29,18 @@ export function createUploadRouter(uploadsDir: string): Router {
     }
     response.status(201).json({
       backgroundImagePath: `/uploads/stage-backgrounds/${sessionId}/${file.filename}`,
+    });
+  });
+
+  router.post('/enemy-sheet', upload.single('image'), (request, response) => {
+    const sessionId = String(request.body.sessionId || 'shared');
+    const file = request.file;
+    if (!file) {
+      response.status(400).json({ message: 'Enemy sheet upload failed.' });
+      return;
+    }
+    response.status(201).json({
+      imagePath: `/uploads/enemy-sheets/${sessionId}/${file.filename}`,
     });
   });
 

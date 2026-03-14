@@ -28,4 +28,24 @@ export class SessionController {
   dashboard = async (request: Request, response: Response) => {
     response.json(await this.sessionService.dashboard(String(request.params['sessionId'])));
   };
+
+  analytics = async (request: Request, response: Response) => {
+    response.json(await this.sessionService.analytics(String(request.params['sessionId'])));
+  };
+
+  exportSession = async (request: Request, response: Response) => {
+    response.json(await this.sessionService.exportSession(String(request.params['sessionId'])));
+  };
+
+  importSession = async (request: Request, response: Response) => {
+    response.status(201).json(await this.sessionService.importSession(request.body));
+  };
+
+  exportFullApp = async (_request: Request, response: Response) => {
+    response.json(await this.sessionService.exportFullApp());
+  };
+
+  importFullApp = async (request: Request, response: Response) => {
+    response.json(await this.sessionService.importFullApp(request.body));
+  };
 }

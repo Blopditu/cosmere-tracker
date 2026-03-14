@@ -1,6 +1,16 @@
 import { Injectable, signal } from '@angular/core';
-import { CreateSessionInput, SessionDashboard, SessionSummary, UpdateSessionInput } from '@shared/domain';
+import {
+  CreateSessionInput,
+  FullAppBackup,
+  ImportResult,
+  SessionAnalytics,
+  SessionBackup,
+  SessionDashboard,
+  SessionSummary,
+  UpdateSessionInput,
+} from '@shared/domain';
 import { ApiService } from './api.service';
+import { AppRuntimeService } from './app-runtime.service';
 
 @Injectable({
   providedIn: 'root',
@@ -8,8 +18,10 @@ import { ApiService } from './api.service';
 export class SessionStoreService {
   readonly sessions = signal<SessionSummary[]>([]);
   readonly loading = signal(false);
-
-  constructor(private readonly api: ApiService) {
+  constructor(
+    private readonly api: ApiService,
+    private readonly runtime: AppRuntimeService,
+  ) {
     void this.loadSessions();
   }
 
@@ -34,6 +46,15 @@ export class SessionStoreService {
     return session;
   }
 
+  async uploadEnemySheet(sessionId: string, file: File): Promise<string> {
+    const formData = new FormData();
+    formData.append('sessionId', sessionId);
+    formData.append('uploadType', 'enemy-sheets');
+    formData.append('image', file);
+    const response = await this.api.upload<{ imagePath: string }>('/api/uploads/enemy-sheet', formData);
+    return response.imagePath;
+  }
+
   async deleteSession(sessionId: string): Promise<void> {
     await this.api.delete(`/api/sessions/${sessionId}`);
     this.sessions.update((items) => items.filter((entry) => entry.id !== sessionId));
@@ -41,5 +62,38 @@ export class SessionStoreService {
 
   async getDashboard(sessionId: string): Promise<SessionDashboard> {
     return this.api.get<SessionDashboard>(`/api/sessions/${sessionId}/dashboard`);
+  }
+
+  async getAnalytics(sessionId: string): Promise<SessionAnalytics> {
+    return this.api.get<SessionAnalytics>(`/api/sessions/${sessionId}/analytics`);
+  }
+
+  async exportSession(sessionId: string): Promise<SessionBackup> {
+    return this.api.get<SessionBackup>(`/api/sessions/${sessionId}/export`);
+  }
+
+  async importSession(backup: SessionBackup): Promise<ImportResult> {
+    const result = await this.api.post<ImportResult>('/api/sessions/import', backup);
+    await this.loadSessions();
+    return result;
+  }
+
+  async exportFullApp(): Promise<FullAppBackup> {
+    return this.api.get<FullAppBackup>('/api/backup/export');
+  }
+
+  async importFullApp(backup: FullAppBackup): Promise<ImportResult> {
+    const result = await this.api.post<ImportResult>('/api/backup/import', backup);
+    await this.loadSessions();
+    return result;
+  }
+
+  async refreshLiveScene(sessionId: string): Promise<void> {
+    const [liveState, scenes] = await Promise.all([
+      this.api.get<{ liveSceneId: string | null }>(`/api/sessions/${sessionId}/live-stage`),
+      this.api.get<Array<{ id: string; title: string }>>(`/api/sessions/${sessionId}/stage-scenes`),
+    ]);
+    const liveTitle = scenes.find((scene) => scene.id === liveState.liveSceneId)?.title ?? null;
+    this.runtime.resetLiveScene(sessionId, liveTitle);
   }
 }

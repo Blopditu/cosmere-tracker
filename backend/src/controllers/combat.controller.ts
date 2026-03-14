@@ -56,12 +56,25 @@ export class CombatController {
     response.status(201).json(await this.combatService.logAction(String(request.params['combatId']), request.body));
   };
 
+  revertAction = async (request: Request, response: Response) => {
+    response.json(
+      await this.combatService.revertAction(
+        String(request.params['combatId']),
+        String(request.params['actionEventId']),
+      ),
+    );
+  };
+
   logDamage = async (request: Request, response: Response) => {
     response.status(201).json(await this.combatService.logDamage(String(request.params['combatId']), request.body));
   };
 
   logFocus = async (request: Request, response: Response) => {
     response.status(201).json(await this.combatService.logFocus(String(request.params['combatId']), request.body));
+  };
+
+  logHealth = async (request: Request, response: Response) => {
+    response.status(201).json(await this.combatService.logHealth(String(request.params['combatId']), request.body));
   };
 
   logCondition = async (request: Request, response: Response) => {

@@ -66,6 +66,11 @@ export class RollService {
     return next;
   }
 
+  async delete(rollId: string): Promise<void> {
+    const rolls = await this.rollRepository.list();
+    await this.rollRepository.saveAll(rolls.filter((roll) => roll.id !== rollId));
+  }
+
   async analytics(sessionId: string): Promise<RollAnalytics> {
     const rolls = await this.listBySession(sessionId);
     const attackRolls = rolls.filter((roll) => roll.rollCategory === 'attack');
@@ -82,7 +87,7 @@ export class RollService {
     const nat20Count = rolls.filter((roll) => roll.rawD20 === 20).length;
     const nat1Count = rolls.filter((roll) => roll.rawD20 === 1).length;
     const successfulAttacks = attackRolls.filter((roll) =>
-      ['success', 'criticalSuccess'].includes(roll.outcome),
+      ['success', 'criticalSuccess', 'graze'].includes(roll.outcome),
     ).length;
 
     return {

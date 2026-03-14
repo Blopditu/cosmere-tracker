@@ -9,7 +9,9 @@ import { ApiService } from '../../core/api.service';
   selector: 'app-player-display-page',
   imports: [CommonModule],
   template: `
-    <div class="player-display" [style.background-image]="backgroundImage()">
+    <div class="player-display player-display-frame" [style.background-image]="backgroundImage()">
+      <div class="player-display-vignette"></div>
+      <div class="player-display-border"></div>
       @if (!backgroundImage()) {
         <div class="player-display-fallback">No scene is live.</div>
       }

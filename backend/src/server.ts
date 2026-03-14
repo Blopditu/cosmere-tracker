@@ -7,6 +7,8 @@ import { RollRepository } from './repositories/roll.repository';
 import { CombatRepository } from './repositories/combat.repository';
 import { StageSceneRepository } from './repositories/stage-scene.repository';
 import { LiveStageRepository } from './repositories/live-stage.repository';
+import { PartyMemberRepository } from './repositories/party-member.repository';
+import { ParticipantTemplateRepository } from './repositories/participant-template.repository';
 import { RollService } from './services/roll.service';
 import { SessionService } from './services/session.service';
 import { CombatService } from './services/combat.service';
@@ -15,11 +17,13 @@ import { SessionController } from './controllers/session.controller';
 import { RollController } from './controllers/roll.controller';
 import { CombatController } from './controllers/combat.controller';
 import { StageController } from './controllers/stage.controller';
+import { BackupController } from './controllers/backup.controller';
 import { createSessionRouter } from './routes/session.routes';
 import { createRollRouter } from './routes/roll.routes';
 import { createCombatRouter } from './routes/combat.routes';
 import { createStageRouter } from './routes/stage.routes';
 import { createUploadRouter } from './routes/upload.routes';
+import { createBackupRouter } from './routes/backup.routes';
 
 const rootDir = path.resolve(__dirname, '..');
 const dataDir = path.join(rootDir, 'data');
@@ -32,6 +36,8 @@ app.use(express.json({ limit: '5mb' }));
 app.use('/uploads', express.static(uploadsDir));
 
 const sessionRepository = new SessionRepository(dataDir);
+const partyMemberRepository = new PartyMemberRepository(dataDir);
+const participantTemplateRepository = new ParticipantTemplateRepository(dataDir);
 const rollRepository = new RollRepository(dataDir);
 const combatRepository = new CombatRepository(dataDir);
 const stageSceneRepository = new StageSceneRepository(dataDir);
@@ -40,6 +46,8 @@ const liveStageRepository = new LiveStageRepository(dataDir);
 const rollService = new RollService(rollRepository);
 const sessionService = new SessionService(
   sessionRepository,
+  partyMemberRepository,
+  participantTemplateRepository,
   rollRepository,
   combatRepository,
   stageSceneRepository,
@@ -52,6 +60,7 @@ app.use('/api/sessions', createSessionRouter(new SessionController(sessionServic
 app.use('/api', createRollRouter(new RollController(rollService)));
 app.use('/api', createCombatRouter(new CombatController(combatService)));
 app.use('/api', createStageRouter(new StageController(stageService)));
+app.use('/api/backup', createBackupRouter(new BackupController(sessionService)));
 app.use('/api/uploads', createUploadRouter(uploadsDir));
 
 app.get('/api/health', (_request, response) => {

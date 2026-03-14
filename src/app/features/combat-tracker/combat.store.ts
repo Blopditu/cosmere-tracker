@@ -6,6 +6,7 @@ import {
   CreateCombatInput,
   CreateConditionEventInput,
   CreateFocusEventInput,
+  CreateHealthEventInput,
   CreateRoundInput,
   UpdateTurnInput,
 } from '@shared/domain';
@@ -62,8 +63,17 @@ export class CombatStore {
     this.combat.set(await this.api.post<CombatRecord>(`/api/combats/${combatId}/actions`, input));
   }
 
+  async revertAction(combatId: string, actionEventId: string): Promise<void> {
+    const result = await this.api.delete<{ combat: CombatRecord }>(`/api/combats/${combatId}/actions/${actionEventId}`);
+    this.combat.set(result.combat);
+  }
+
   async logFocus(combatId: string, input: CreateFocusEventInput): Promise<void> {
     this.combat.set(await this.api.post<CombatRecord>(`/api/combats/${combatId}/focus-events`, input));
+  }
+
+  async logHealth(combatId: string, input: CreateHealthEventInput): Promise<void> {
+    this.combat.set(await this.api.post<CombatRecord>(`/api/combats/${combatId}/health-events`, input));
   }
 
   async logCondition(combatId: string, input: CreateConditionEventInput): Promise<void> {
