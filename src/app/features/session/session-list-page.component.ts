@@ -50,6 +50,12 @@ function parseRosterLines(value: string, side: 'pc' | 'enemy'): Array<Omit<Party
             <strong>{{ enemySeedCount() }}</strong>
         </article>
       </div>
+      <div class="button-row">
+        <a class="button-outline shell-shortcut" routerLink="/campaign/roster">
+          <app-roshar-icon key="dashboard" label="Open campaign roster" tone="topaz" [size]="16" />
+          <span>Campaign roster</span>
+        </a>
+      </div>
     </section>
 
     <div class="layout-columns session-index-columns">

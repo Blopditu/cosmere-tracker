@@ -75,6 +75,10 @@ import { AppRuntimeService } from './app-runtime.service';
             <app-roshar-icon key="sessions" label="Session index" tone="gold" [size]="18" />
             <span>Sessions</span>
           </a>
+          <a routerLink="/campaign/roster" routerLinkActive="active">
+            <app-roshar-icon key="dashboard" label="Campaign roster" tone="topaz" [size]="18" />
+            <span>Roster</span>
+          </a>
           <a [routerLink]="sessionRoute()" routerLinkActive="active">
             <app-roshar-icon key="dashboard" label="Dashboard" tone="sapphire" [size]="18" />
             <span>Dashboard</span>
@@ -118,7 +122,7 @@ export class ShellLayoutComponent {
     this.currentSessionId() ? ['/sessions', this.currentSessionId(), 'rolls'] : ['/sessions'],
   );
   readonly combatRoute = computed(() =>
-    this.currentSessionId() ? ['/sessions', this.currentSessionId(), 'combats', 'new'] : ['/sessions'],
+    this.currentSessionId() ? ['/sessions', this.currentSessionId(), 'combats'] : ['/sessions'],
   );
   readonly stageRoute = computed(() =>
     this.currentSessionId() ? ['/gm/stage-manager', this.currentSessionId()] : ['/sessions'],
@@ -159,6 +163,10 @@ export class ShellLayoutComponent {
     const url = this.router.url;
     const routeKey: TourRouteKey = url.includes('/gm/stage-manager/')
       ? 'stageManager'
+      : url.includes('/campaign/roster')
+        ? 'campaignRoster'
+      : /^\/sessions\/[^/]+\/combats$/.test(url)
+        ? 'combatQueue'
       : url.includes('/combats/') && url.includes('/summary')
         ? 'combatSummary'
         : url.includes('/combats/new')

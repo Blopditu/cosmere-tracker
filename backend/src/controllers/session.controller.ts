@@ -29,6 +29,14 @@ export class SessionController {
     response.json(await this.sessionService.dashboard(String(request.params['sessionId'])));
   };
 
+  campaignRoster = async (_request: Request, response: Response) => {
+    response.json(await this.sessionService.campaignRoster());
+  };
+
+  updateCampaignRoster = async (request: Request, response: Response) => {
+    response.json(await this.sessionService.updateCampaignRoster(request.body));
+  };
+
   analytics = async (request: Request, response: Response) => {
     response.json(await this.sessionService.analytics(String(request.params['sessionId'])));
   };

@@ -128,7 +128,8 @@ import { nextAvailableOrdinal, toAlphabeticSuffix } from './combat-setup.utils';
         </div>
 
         <div class="button-row full-width">
-          <button type="submit">Create combat</button>
+          <button type="submit" (click)="submitMode.set('queue')">Prepare combat</button>
+          <button type="submit" class="button-outline" (click)="submitMode.set('open')">Prepare and open</button>
         </div>
       </form>
     </section>
@@ -143,6 +144,7 @@ export class CombatSetupPageComponent {
   private readonly fb = inject(FormBuilder);
   readonly sessionId = signal('');
   readonly dashboardLoaded = signal(false);
+  readonly submitMode = signal<'queue' | 'open'>('queue');
   readonly participants = signal<
     Array<{
       participantId: string;
@@ -246,7 +248,11 @@ export class CombatSetupPageComponent {
       initialRound,
     };
     const combat = await this.combatStore.create(this.sessionId(), payload);
-    await this.router.navigate(['/sessions', this.sessionId(), 'combats', combat.id]);
+    if (this.submitMode() === 'open') {
+      await this.router.navigate(['/sessions', this.sessionId(), 'combats', combat.id]);
+      return;
+    }
+    await this.router.navigate(['/sessions', this.sessionId(), 'combats']);
   }
 
   addEnemy(templateId: string): void {

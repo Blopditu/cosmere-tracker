@@ -1,5 +1,6 @@
 import { Injectable, signal } from '@angular/core';
 import {
+  CampaignRoster,
   CreateSessionInput,
   FullAppBackup,
   ImportResult,
@@ -62,6 +63,16 @@ export class SessionStoreService {
 
   async getDashboard(sessionId: string): Promise<SessionDashboard> {
     return this.api.get<SessionDashboard>(`/api/sessions/${sessionId}/dashboard`);
+  }
+
+  async getCampaignRoster(): Promise<CampaignRoster> {
+    return this.api.get<CampaignRoster>('/api/sessions/campaign/roster');
+  }
+
+  async updateCampaignRoster(patch: CampaignRoster): Promise<CampaignRoster> {
+    const roster = await this.api.patch<CampaignRoster>('/api/sessions/campaign/roster', patch);
+    await this.loadSessions();
+    return roster;
   }
 
   async getAnalytics(sessionId: string): Promise<SessionAnalytics> {

@@ -1206,6 +1206,9 @@ label span {
   grid-template-rows: minmax(0, 1.05fr) minmax(240px, 0.95fr);
   gap: 1rem;
   min-height: 0;
+  position: sticky;
+  top: 0.9rem;
+  max-height: calc(100vh - 1.8rem);
 }
 
 .tactical-group h3 {
@@ -1283,6 +1286,8 @@ label span {
 .roster-editor-list {
   display: grid;
   gap: 0.75rem;
+  overflow-x: auto;
+  padding-bottom: 0.2rem;
 }
 
 .roster-editor-row {
@@ -1290,6 +1295,7 @@ label span {
   grid-template-columns: minmax(160px, 1.2fr) minmax(140px, 1fr) 96px 96px auto auto;
   gap: 0.6rem;
   align-items: center;
+  min-width: max-content;
   padding: 0.85rem;
   border-radius: var(--radius-md);
   border: 1px solid rgb(202 162 87 / 0.1);
@@ -1298,12 +1304,24 @@ label span {
     rgb(8 12 30 / 0.34);
 }
 
+.roster-editor-row > * {
+  min-width: 0;
+}
+
+.roster-editor-row .micro-button {
+  width: 100%;
+}
+
+.party-roster-row {
+  grid-template-columns: minmax(160px, 1.35fr) minmax(140px, 1fr) 96px 96px 136px 104px;
+}
+
 .encounter-row {
-  grid-template-columns: minmax(160px, 1.2fr) minmax(140px, 1fr) 96px 96px minmax(170px, 1fr) auto;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) 96px 96px minmax(170px, 1fr) 88px;
 }
 
 .enemy-template-row {
-  grid-template-columns: minmax(160px, 1.1fr) minmax(120px, 0.9fr) 88px 88px minmax(260px, 1fr) auto;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr) 88px 88px minmax(260px, 1fr) 88px;
 }
 
 .compact-card-header {
@@ -1556,9 +1574,7 @@ label span {
   min-height: calc(100vh - 260px);
 }
 
-.combat-sidebar,
-.combat-console,
-.combat-feed-panel {
+.combat-sidebar {
   position: sticky;
   top: 0.9rem;
 }
@@ -1588,6 +1604,11 @@ label span {
 .combat-feed-panel {
   min-height: 0;
   overflow: auto;
+}
+
+.combat-command-column .combat-console,
+.combat-command-column .combat-feed-panel {
+  position: static;
 }
 
 .combat-sidebar {
@@ -1825,10 +1846,8 @@ label span {
     grid-column: auto;
   }
 
-  .roster-editor-row,
-  .encounter-row,
-  .roster-grid-head {
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  .party-roster-row {
+    grid-template-columns: minmax(160px, 1.35fr) minmax(140px, 1fr) 96px 96px 136px 104px;
   }
 
   .enemy-template-row {

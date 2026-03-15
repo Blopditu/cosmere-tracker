@@ -4,6 +4,8 @@ import { SessionController } from '../controllers/session.controller';
 
 export function createSessionRouter(controller: SessionController): Router {
   const router = Router();
+  router.get('/campaign/roster', asyncHandler(controller.campaignRoster));
+  router.patch('/campaign/roster', asyncHandler(controller.updateCampaignRoster));
   router.get('/', asyncHandler(controller.list));
   router.post('/', asyncHandler(controller.create));
   router.get('/:sessionId', asyncHandler(controller.get));

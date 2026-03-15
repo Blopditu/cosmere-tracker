@@ -3,8 +3,10 @@ import { Injectable, computed, inject, signal } from '@angular/core';
 
 export type TourRouteKey =
   | 'sessions'
+  | 'campaignRoster'
   | 'dashboard'
   | 'rolls'
+  | 'combatQueue'
   | 'combatSetup'
   | 'combatTracker'
   | 'combatSummary'
@@ -59,6 +61,24 @@ const ROUTE_STEPS: Record<TourRouteKey, TourStep[]> = {
       placement: 'left',
     },
   ],
+  campaignRoster: [
+    {
+      title: 'Manage the campaign roster',
+      description: 'This module owns the persistent players and enemy templates shared across the whole campaign.',
+      selector: '[data-tour="campaign-roster"]',
+    },
+    {
+      title: 'Add recurring players here',
+      description: 'Players live at campaign level now. Add or edit them here once, then include them in specific sessions from the dashboard.',
+      selector: '[data-tour="campaign-players"]',
+    },
+    {
+      title: 'Build reusable enemy templates',
+      description: 'Enemy templates also live here so combats can clone them into encounters without retyping their baseline stats or sheet image.',
+      selector: '[data-tour="campaign-enemies"]',
+      placement: 'top',
+    },
+  ],
   dashboard: [
     {
       title: 'Use the dashboard as your hub',
@@ -68,7 +88,7 @@ const ROUTE_STEPS: Record<TourRouteKey, TourStep[]> = {
     },
     {
       title: 'Switch between party and enemies',
-      description: 'The roster editor now stays focused: edit the party or enemy reserve in one surface, then save both together.',
+      description: 'The session dashboard now focuses on who is actually present. Use it to mark which campaign players are in this specific session.',
       selector: '[data-tour="dashboard-roster"]',
       placement: 'bottom',
     },
@@ -107,6 +127,13 @@ const ROUTE_STEPS: Record<TourRouteKey, TourStep[]> = {
       description: 'Recent history helps you verify what just happened before moving on to the next scene or turn.',
       selector: '[data-tour="roll-history"]',
       placement: 'top',
+    },
+  ],
+  combatQueue: [
+    {
+      title: 'Queue prepared encounters',
+      description: 'This queue keeps planned, active, and finished combats separated so you can prepare several encounters in advance.',
+      selector: '[data-tour="combat-queue"]',
     },
   ],
   combatSetup: [

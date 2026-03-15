@@ -237,6 +237,11 @@ export interface SessionDashboard {
   recentCombats: CombatRecord[];
 }
 
+export interface CampaignRoster {
+  partyMembers: PartyMember[];
+  participantTemplates: ParticipantTemplate[];
+}
+
 export interface SessionAnalyticsRow {
   actorName: string;
   rollCount: number;

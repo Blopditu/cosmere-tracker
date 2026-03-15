@@ -1,10 +1,11 @@
 import { CommonModule } from '@angular/common';
 import { Component, DestroyRef, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { ActivatedRoute, RouterLink } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { ParticipantTemplate, PartyMember, SessionAnalytics, SessionDashboard } from '@shared/domain';
 import { SessionStoreService } from '../../core/session-store.service';
 import { RosharIconComponent } from '../../shared/roshar-icon.component';
+import { CombatStore } from '../combat-tracker/combat.store';
 
 @Component({
   selector: 'app-session-dashboard-page',
@@ -20,7 +21,8 @@ import { RosharIconComponent } from '../../shared/roshar-icon.component';
         <div class="dashboard-command-links" data-tour="dashboard-actions">
           <div class="button-row">
             <a [routerLink]="['/sessions', dashboard()!.session.id, 'rolls']">Rolls</a>
-            <a [routerLink]="['/sessions', dashboard()!.session.id, 'combats', 'new']" class="button-outline">New combat</a>
+            <a [routerLink]="['/sessions', dashboard()!.session.id, 'combats']" class="button-outline">Combat queue</a>
+            <a [routerLink]="['/sessions', dashboard()!.session.id, 'combats', 'new']" class="button-outline">Prepare combat</a>
             <a [routerLink]="['/gm/stage-manager', dashboard()!.session.id]" class="button-outline">Stage</a>
           </div>
           <div class="session-command-chips">
@@ -134,10 +136,16 @@ import { RosharIconComponent } from '../../shared/roshar-icon.component';
               <app-roshar-icon key="sessions" label="Roster management" tone="gold" [size]="18" />
               <h3>Roster management</h3>
             </div>
-            <button type="button" class="shell-shortcut" (click)="saveRoster()">
-              <app-roshar-icon key="aid" label="Save roster" tone="gold" [size]="16" />
-              <span>Save roster</span>
-            </button>
+            <div class="button-row">
+              <a class="button-outline shell-shortcut" routerLink="/campaign/roster">
+                <app-roshar-icon key="dashboard" label="Open campaign roster" tone="topaz" [size]="16" />
+                <span>Campaign roster</span>
+              </a>
+              <button type="button" class="shell-shortcut" (click)="saveRoster()">
+                <app-roshar-icon key="aid" label="Save session cast" tone="gold" [size]="16" />
+                <span>Save session cast</span>
+              </button>
+            </div>
           </div>
 
           <div class="roster-view-toggle">
@@ -160,7 +168,7 @@ import { RosharIconComponent } from '../../shared/roshar-icon.component';
               <p class="muted roster-helper-copy">Players are campaign-level characters. Toggle who appears in this session, then save once for the whole roster.</p>
               <div class="roster-editor-list">
                 @for (member of partyDraft(); track member.id) {
-                  <article class="roster-editor-row">
+                  <article class="roster-editor-row party-roster-row">
                     <input [(ngModel)]="member.name" [ngModelOptions]="{ standalone: true }" type="text" placeholder="Name" />
                     <input [(ngModel)]="member.role" [ngModelOptions]="{ standalone: true }" type="text" placeholder="Role" />
                     <input [(ngModel)]="member.maxHealth" [ngModelOptions]="{ standalone: true }" type="number" min="0" placeholder="HP" />
@@ -276,13 +284,21 @@ import { RosharIconComponent } from '../../shared/roshar-icon.component';
                       <h3>{{ combat.title }}</h3>
                       <p>{{ combat.status }} • round {{ combat.currentRoundNumber || 0 }}</p>
                     </div>
-                    <a class="button-outline shell-shortcut" [routerLink]="['/sessions', dashboard()!.session.id, 'combats', combat.id]">
-                      <app-roshar-icon key="combat" label="Open combat" tone="ruby" [size]="16" />
-                      <span>Open</span>
-                    </a>
+                    <div class="button-row">
+                      <a class="button-outline shell-shortcut" [routerLink]="['/sessions', dashboard()!.session.id, 'combats', combat.id]">
+                        <app-roshar-icon key="combat" label="Open combat" tone="ruby" [size]="16" />
+                        <span>Open</span>
+                      </a>
+                      @if (combat.status === 'planned') {
+                        <button type="button" class="shell-shortcut" (click)="startPreparedCombat(combat.id)">
+                          <app-roshar-icon key="live" label="Start combat" tone="topaz" [size]="16" />
+                          <span>Start</span>
+                        </button>
+                      }
+                    </div>
                   </article>
                 } @empty {
-                  <article class="empty-card">No combats recorded yet. Start the next encounter from the command links above.</article>
+                  <article class="empty-card">No combats recorded yet. Prepare several encounters in the combat queue, then start the right one when the table reaches it.</article>
                 }
               </div>
             </section>
@@ -319,6 +335,8 @@ import { RosharIconComponent } from '../../shared/roshar-icon.component';
 export class SessionDashboardPageComponent {
   private readonly route = inject(ActivatedRoute);
   private readonly sessionStore = inject(SessionStoreService);
+  private readonly combatStore = inject(CombatStore);
+  private readonly router = inject(Router);
   private readonly destroyRef = inject(DestroyRef);
   readonly sessionId = signal('');
   readonly dashboard = signal<SessionDashboard | null>(null);
@@ -462,6 +480,11 @@ export class SessionDashboardPageComponent {
     this.sessionPlayerIdsDraft.update((items) =>
       items.includes(playerId) ? items.filter((entry) => entry !== playerId) : [...items, playerId],
     );
+  }
+
+  async startPreparedCombat(combatId: string): Promise<void> {
+    await this.combatStore.startCombat(combatId);
+    await this.router.navigate(['/sessions', this.sessionId(), 'combats', combatId]);
   }
 
   private normalizeRosterEntry<T extends PartyMember | ParticipantTemplate>(

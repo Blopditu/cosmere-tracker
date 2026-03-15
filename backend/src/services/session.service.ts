@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import {
+  CampaignRoster,
   CombatRecord,
   CreateSessionInput,
   FullAppBackup,
@@ -425,6 +426,38 @@ export class SessionService {
         .filter((combat) => combat.sessionId === sessionId)
         .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
         .slice(0, 5),
+    };
+  }
+
+  async campaignRoster(): Promise<CampaignRoster> {
+    const { partyMembers, participantTemplates } = await this.loadCampaignData();
+    return {
+      partyMembers: [...partyMembers].sort((left, right) => left.name.localeCompare(right.name)),
+      participantTemplates: [...participantTemplates].sort((left, right) => left.name.localeCompare(right.name)),
+    };
+  }
+
+  async updateCampaignRoster(patch: CampaignRoster): Promise<CampaignRoster> {
+    const { sessions } = await this.loadCampaignData();
+    const partyMembers = patch.partyMembers.map(normalizePartyMember).filter((member) => member.name);
+    const participantTemplates = patch.participantTemplates
+      .map(normalizeParticipantTemplate)
+      .filter((template) => template.name);
+    const validPlayerIds = new Set(partyMembers.map((member) => member.id));
+    const nextSessions = sessions.map((session) => ({
+      ...session,
+      playerIds: session.playerIds.filter((playerId) => validPlayerIds.has(playerId)),
+    }));
+
+    await Promise.all([
+      this.sessionRepository.saveAll(nextSessions),
+      this.partyMemberRepository.saveAll(partyMembers),
+      this.participantTemplateRepository.saveAll(participantTemplates),
+    ]);
+
+    return {
+      partyMembers: [...partyMembers].sort((left, right) => left.name.localeCompare(right.name)),
+      participantTemplates: [...participantTemplates].sort((left, right) => left.name.localeCompare(right.name)),
     };
   }
 
