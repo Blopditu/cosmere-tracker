@@ -20,6 +20,10 @@ yarn-error.log
 .settings/
 *.sublime-workspace
 
+/.pdffiles/*
+/.import-cache/
+/.venv-import/
+
 # Visual Studio Code
 .vscode/*
 !.vscode/settings.json
@@ -45,3 +49,4 @@ backend/dist/
 # System files
 .DS_Store
 Thumbs.db
+__pycache__/

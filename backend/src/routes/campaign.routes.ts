@@ -13,6 +13,14 @@ export function createCampaignRouter(controller: CampaignConsoleController): Rou
   router.post('/campaigns/:campaignId/runtime/resources', asyncHandler(controller.adjustResource));
   router.post('/campaigns/:campaignId/runtime/conditions', asyncHandler(controller.mutateCondition));
   router.post('/campaigns/:campaignId/runtime/dice-rolls', asyncHandler(controller.logDiceRoll));
+  router.post('/rules/evaluate', asyncHandler(controller.evaluateRules));
+  router.post('/campaigns/:campaignId/endeavors/:endeavorId/start', asyncHandler(controller.startEndeavorRun));
+  router.post('/campaigns/:campaignId/endeavor-runs/:runId/resolve', asyncHandler(controller.resolveEndeavorApproach));
+  router.post('/campaigns/:campaignId/endeavor-runs/:runId/adjust', asyncHandler(controller.adjustEndeavorRun));
+  router.post('/simulations', asyncHandler(controller.createSimulation));
+  router.post('/simulations/:simulationDefinitionId/run', asyncHandler(controller.runSimulation));
+  router.get('/simulations/:simulationDefinitionId/results', asyncHandler(controller.listSimulationResults));
+  router.get('/analytics/campaigns/:campaignId', asyncHandler(controller.getAnalytics));
 
   return router;
 }

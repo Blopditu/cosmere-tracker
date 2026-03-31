@@ -3,7 +3,9 @@ import { Component, DestroyRef, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute } from '@angular/router';
 import {
+  ActionDefinition,
   CampaignConsoleData,
+  EndeavorRun,
   EntityPointer,
   EventLogEntry,
   ResolvedNPCCard,
@@ -304,6 +306,51 @@ type InspectorTab = 'gm' | 'source' | 'diff' | 'truth' | 'entities' | 'rules';
                           <p>{{ encounter.objective || 'Fallback combat convergence.' }}</p>
                         </article>
                       }
+                      @if (scene.endeavorId && activeEndeavorRun(); as run) {
+                        <article class="entity-card emphasis-card">
+                          <div class="entity-card-head">
+                            <h4>Active endeavor run</h4>
+                            <span class="pill">{{ run.status }}</span>
+                          </div>
+                          <div class="scene-node-tags">
+                            @for (entry of endeavorTrackEntries(run); track entry.key) {
+                              <span class="tag-chip">{{ entry.key }} {{ entry.value }}</span>
+                            }
+                          </div>
+                          <div class="list-stack compact-stack">
+                            @for (state of availableObstacleStates(); track state.obstacleId) {
+                              @if (obstacleForState(state); as obstacle) {
+                                <article class="entity-card">
+                                  <h4>{{ obstacle.title }}</h4>
+                                  <p>{{ obstacle.summary }}</p>
+                                  <div class="button-row wrap-row">
+                                    @for (approach of obstacle.approaches; track approach.id) {
+                                      <button type="button" class="button-outline micro-action" (click)="resolveApproach(obstacle.id, approach.id, 'success')">
+                                        {{ approach.label }} ✓
+                                      </button>
+                                      <button type="button" class="button-outline micro-action" (click)="resolveApproach(obstacle.id, approach.id, 'mixed')">
+                                        Mixed
+                                      </button>
+                                      <button type="button" class="button-outline micro-action" (click)="resolveApproach(obstacle.id, approach.id, 'failure')">
+                                        Fail
+                                      </button>
+                                    }
+                                  </div>
+                                </article>
+                              }
+                            }
+                          </div>
+                        </article>
+                      } @else if (linkedEndeavor()) {
+                        <article class="entity-card emphasis-card">
+                          <h4>Run the endeavor</h4>
+                          <p>Start the live run to track progress, alert, and obstacle resolution inline.</p>
+                          <div class="button-row">
+                            <button type="button" (click)="startEndeavor()">Start endeavor</button>
+                            <button type="button" class="button-outline" (click)="runEndeavorSimulation()">Simulate</button>
+                          </div>
+                        </article>
+                      }
                     </div>
                   </section>
                 </div>
@@ -444,6 +491,54 @@ type InspectorTab = 'gm' | 'source' | 'diff' | 'truth' | 'entities' | 'rules';
             </section>
 
             <section class="inset-panel">
+              <p class="eyebrow">Rules assist</p>
+              <label class="compact-field">
+                <span>Action</span>
+                <select [ngModel]="selectedActionKey()" (ngModelChange)="selectedActionKey.set($event)">
+                  <option value="">Choose action</option>
+                  @for (action of data.actionDefinitions; track action.id) {
+                    <option [value]="action.key">{{ action.label }}</option>
+                  }
+                </select>
+              </label>
+              <div class="button-row">
+                <button type="button" (click)="evaluateSelectedAction()">Evaluate</button>
+              </div>
+              @if (store.lastRuleEvaluation(); as evaluation) {
+                <div class="list-stack compact-stack">
+                  @for (advisory of evaluation.advisories; track advisory.message) {
+                    <article class="runtime-event">
+                      <strong>{{ advisory.severity }}{{ advisory.blocking ? ' • block' : '' }}</strong>
+                      <small>{{ advisory.message }}</small>
+                    </article>
+                  } @empty {
+                    <article class="empty-card">No rule warnings for the selected action.</article>
+                  }
+                </div>
+              }
+            </section>
+
+            <section class="inset-panel">
+              <p class="eyebrow">Analytics</p>
+              <div class="list-stack compact-stack">
+                @for (bucket of data.analytics.diceByTag; track bucket.key) {
+                  <article class="entity-card">
+                    <h4>{{ bucket.key }}</h4>
+                    <p>{{ bucket.count }} rolls • avg {{ bucket.average }}</p>
+                  </article>
+                } @empty {
+                  <article class="empty-card">No analytics derived yet.</article>
+                }
+              </div>
+              @if (latestSimulationResult(); as result) {
+                <article class="entity-card emphasis-card">
+                  <h4>Latest simulation</h4>
+                  <p>Success rate {{ (result.successRate * 100).toFixed(0) }}% • {{ result.sampleSize }} runs</p>
+                </article>
+              }
+            </section>
+
+            <section class="inset-panel">
               <p class="eyebrow">Recent log</p>
               <div class="list-stack compact-stack">
                 @for (event of data.runtime.recentEvents; track event.id) {
@@ -478,6 +573,9 @@ export class CampaignConsolePageComponent {
   readonly rawDiceText = signal('16');
   readonly diceModifier = signal(0);
   readonly diceTotal = signal(16);
+  readonly selectedActionKey = signal('');
+  readonly simulationIterations = signal(250);
+  readonly simulationSeed = signal(1337);
 
   readonly inspectorTabs = [
     { id: 'gm' as const, label: 'GM layer' },
@@ -569,6 +667,18 @@ export class CampaignConsolePageComponent {
     const data = this.store.consoleData();
     return scene?.encounterSetupId ? data?.encounters.find((encounter) => encounter.id === scene.encounterSetupId) ?? null : null;
   });
+  readonly activeEndeavorRun = computed(() => {
+    const scene = this.selectedScene();
+    const data = this.store.consoleData();
+    if (!scene?.endeavorId || !data?.activeEndeavorRun) {
+      return null;
+    }
+    return data.activeEndeavorRun.endeavorId === scene.endeavorId ? data.activeEndeavorRun : null;
+  });
+  readonly availableObstacleStates = computed(() =>
+    this.activeEndeavorRun()?.obstacleStates.filter((state) => state.status === 'available') ?? [],
+  );
+  readonly latestSimulationResult = computed(() => this.store.simulationResults()[0] ?? this.store.consoleData()?.simulationResults[0] ?? null);
 
   constructor() {
     const sub = this.route.paramMap.subscribe((params) => {
@@ -644,8 +754,77 @@ export class CampaignConsolePageComponent {
     this.syncSelection(data);
   }
 
+  async evaluateSelectedAction(): Promise<void> {
+    const action = this.currentAction();
+    if (!action) {
+      return;
+    }
+    await this.store.evaluateRules({
+      campaignId: this.campaignId(),
+      sceneNodeId: this.selectedSceneId() || undefined,
+      phase: action.phase,
+      trigger: action.phase === 'endeavor' ? 'action.attempt' : action.phase === 'conversation' ? 'conversation.exchange' : 'action.attempt',
+      actionKey: action.key,
+      actor: this.selectedTarget()?.entity,
+      resolutionTags: action.resolutionTags,
+    });
+  }
+
+  async startEndeavor(): Promise<void> {
+    const endeavor = this.linkedEndeavor();
+    if (!endeavor) {
+      return;
+    }
+    const data = await this.store.startEndeavorRun(this.campaignId(), endeavor.id);
+    this.syncSelection(data);
+  }
+
+  async resolveApproach(
+    obstacleId: string,
+    approachId: string,
+    resolution: 'success' | 'mixed' | 'failure',
+  ): Promise<void> {
+    const run = this.activeEndeavorRun();
+    if (!run) {
+      return;
+    }
+    const data = await this.store.resolveEndeavorApproach(this.campaignId(), run.id, {
+      obstacleId,
+      approachId,
+      resolution,
+      actor: this.selectedTarget()?.entity,
+    });
+    this.syncSelection(data);
+  }
+
+  async runEndeavorSimulation(): Promise<void> {
+    const endeavor = this.linkedEndeavor();
+    if (!endeavor) {
+      return;
+    }
+    const definition = await this.store.createSimulation({
+      campaignId: this.campaignId(),
+      label: `${endeavor.title} forecast`,
+      kind: 'endeavor',
+      endeavorId: endeavor.id,
+      iterationCount: this.simulationIterations(),
+      seed: this.simulationSeed(),
+      variableMatrix: {
+        successRate: [0.58],
+        mixedRate: [0.22],
+      },
+      assumptions: ['Heuristic endeavor simulation', 'Uses first approach per obstacle'],
+    });
+    await this.store.runSimulation(this.campaignId(), definition.id);
+  }
+
   sceneTitle(sceneId: string): string {
     return this.store.consoleData()?.sceneIndex[sceneId]?.title ?? sceneId;
+  }
+
+  currentAction(): ActionDefinition | null {
+    const data = this.store.consoleData();
+    return data?.actionDefinitions.find((action) => action.key === this.selectedActionKey()) ?? null;
   }
 
   activeSceneTitle(): string {
@@ -663,6 +842,14 @@ export class CampaignConsolePageComponent {
 
   locationSummary(location: CampaignConsoleData['locations'][number]): string {
     return location.content.source?.value.publicSummary[0]?.text ?? 'No source summary';
+  }
+
+  endeavorTrackEntries(run: EndeavorRun): Array<{ key: string; value: number }> {
+    return Object.entries(run.trackValues).map(([key, value]) => ({ key, value }));
+  }
+
+  obstacleForState(state: EndeavorRun['obstacleStates'][number]) {
+    return this.linkedObstacles().find((obstacle) => obstacle.id === state.obstacleId) ?? null;
   }
 
   gridColumn(node: ResolvedSceneNode): string {

@@ -238,6 +238,10 @@
   color: var(--text-muted);
 }
 
+.wrap-row {
+  flex-wrap: wrap;
+}
+
 @media (max-width: 1480px) {
   .campaign-console-shell {
     grid-template-columns: minmax(320px, 1fr) minmax(340px, 0.95fr);

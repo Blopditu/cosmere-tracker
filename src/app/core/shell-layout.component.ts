@@ -99,6 +99,10 @@ import { AppRuntimeService } from './app-runtime.service';
             <app-roshar-icon key="chronicle" label="War room" tone="topaz" [size]="18" />
             <span>War Room</span>
           </a>
+          <a routerLink="/gm/import/review" routerLinkActive="active">
+            <app-roshar-icon key="aid" label="Import review" tone="sapphire" [size]="18" />
+            <span>Imports</span>
+          </a>
         </aside>
 
         <main class="shell-content war-content">

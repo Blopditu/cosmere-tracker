@@ -1,14 +1,20 @@
 import { randomUUID } from 'node:crypto';
 import {
+  ActionDefinition,
   AppliedCondition,
   Campaign,
   CampaignConsoleData,
+  CampaignAnalyticsSummary,
   Chapter,
   ChapterState,
   Condition,
   ConditionMutationInput,
+  CreateSimulationInput,
   DiceRoll,
   DiceRollInput,
+  EndeavorApproachResolutionInput,
+  EndeavorRun,
+  EndeavorRunAdjustmentInput,
   EntityPointer,
   EventLogEntry,
   Favor,
@@ -21,13 +27,18 @@ import {
   Outcome,
   PC,
   QuickNoteInput,
+  ResourceDefinition,
   ResourceAdjustmentInput,
   Reward,
+  RuleEvaluationRequest,
+  RuleEvaluationResult,
   RuleReference,
   SceneNode,
   SceneState,
   SceneStateMutationInput,
   SessionRun,
+  SimulationDefinition,
+  SimulationResult,
   buildCampaignConsoleData,
   evaluateStateExpression,
 } from '@shared/domain';
@@ -35,6 +46,8 @@ import { HttpError } from '../lib/http';
 import { SqliteJsonRepository } from '../lib/sqlite';
 import { nowIso } from '../lib/time';
 import { buildCampaignSeed } from './campaign-seed';
+import { RulesEngineService } from './rules-engine.service';
+import { SimulationService } from './simulation.service';
 
 interface CampaignConsoleRepositories {
   campaigns: SqliteJsonRepository<Campaign>;
@@ -55,8 +68,14 @@ interface CampaignConsoleRepositories {
   pcs: SqliteJsonRepository<PC>;
   locations: SqliteJsonRepository<Location>;
   rules: SqliteJsonRepository<RuleReference>;
+  resourceDefinitions: SqliteJsonRepository<ResourceDefinition>;
+  actionDefinitions: SqliteJsonRepository<ActionDefinition>;
+  resolutionHooks: SqliteJsonRepository<import('@shared/domain').ResolutionHook>;
   rewards: SqliteJsonRepository<Reward>;
   favors: SqliteJsonRepository<Favor>;
+  endeavorRuns: SqliteJsonRepository<EndeavorRun>;
+  simulations: SqliteJsonRepository<SimulationDefinition>;
+  simulationResults: SqliteJsonRepository<SimulationResult>;
   events: SqliteJsonRepository<EventLogEntry>;
   diceRolls: SqliteJsonRepository<DiceRoll>;
 }
@@ -73,6 +92,9 @@ interface CampaignContext {
   pcs: PC[];
   locations: Location[];
   rules: RuleReference[];
+  resourceDefinitions: ResourceDefinition[];
+  actionDefinitions: ActionDefinition[];
+  resolutionHooks: import('@shared/domain').ResolutionHook[];
   hooks: Hook[];
   conditions: Condition[];
   outcomes: Outcome[];
@@ -81,6 +103,9 @@ interface CampaignContext {
   endeavors: import('@shared/domain').Endeavor[];
   obstacles: Obstacle[];
   encounters: import('@shared/domain').EncounterSetup[];
+  endeavorRuns: EndeavorRun[];
+  simulations: SimulationDefinition[];
+  simulationResults: SimulationResult[];
   events: EventLogEntry[];
   diceRolls: DiceRoll[];
 }
@@ -107,7 +132,11 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 export class CampaignConsoleService {
   private seedChecked = false;
 
-  constructor(private readonly repositories: CampaignConsoleRepositories) {}
+  constructor(
+    private readonly repositories: CampaignConsoleRepositories,
+    private readonly rulesEngine: RulesEngineService,
+    private readonly simulationService: SimulationService,
+  ) {}
 
   async listCampaigns(): Promise<Campaign[]> {
     this.ensureSeedData();
@@ -117,6 +146,20 @@ export class CampaignConsoleService {
   async getConsole(campaignId: string): Promise<CampaignConsoleData> {
     this.ensureSeedData();
     const context = this.loadContext(campaignId);
+    const resourceTargets = this.buildResourceTargets(context);
+    const analytics = await this.simulationService.buildAnalytics(context.campaign.id);
+    const activeEndeavorRun = this.findActiveEndeavorRun(context);
+    const ruleAdvisories = this.rulesEngine.buildAmbientAdvisories({
+      ruleMode: context.sessionRun.ruleMode,
+      chapterState: context.chapterState,
+      sessionRun: context.sessionRun,
+      sceneNodes: context.sceneNodes,
+      sceneStates: context.sceneStates,
+      actionDefinitions: context.actionDefinitions,
+      resolutionHooks: context.resolutionHooks,
+      resourceTargets,
+    });
+
     return buildCampaignConsoleData({
       campaign: context.campaign,
       chapter: context.chapter,
@@ -136,10 +179,17 @@ export class CampaignConsoleService {
       endeavors: context.endeavors,
       obstacles: context.obstacles,
       encounters: context.encounters,
+      resourceDefinitions: context.resourceDefinitions,
+      actionDefinitions: context.actionDefinitions,
+      resolutionHooks: context.resolutionHooks,
+      activeEndeavorRun,
+      ruleAdvisories,
+      analytics,
+      simulationResults: context.simulationResults,
       sessionRun: context.sessionRun,
       recentEvents: [...context.events].sort((left, right) => right.occurredAt.localeCompare(left.occurredAt)).slice(0, 10),
       recentDiceRolls: [...context.diceRolls].sort((left, right) => right.createdAt.localeCompare(left.createdAt)).slice(0, 8),
-      resourceTargets: this.buildResourceTargets(context),
+      resourceTargets,
     });
   }
 
@@ -409,6 +459,181 @@ export class CampaignConsoleService {
     return this.getConsole(campaignId);
   }
 
+  async evaluateRules(input: RuleEvaluationRequest): Promise<RuleEvaluationResult> {
+    this.ensureSeedData();
+    const context = this.loadContext(input.campaignId);
+    return this.rulesEngine.evaluate(this.buildRuleContext(context), input);
+  }
+
+  async startEndeavorRun(campaignId: string, endeavorId: string): Promise<CampaignConsoleData> {
+    this.ensureSeedData();
+    const context = this.loadContext(campaignId);
+    const endeavor = context.endeavors.find((entry) => entry.id === endeavorId);
+    if (!endeavor) {
+      throw new HttpError(404, 'Endeavor not found.');
+    }
+
+    const existing = context.endeavorRuns.find((run) => run.endeavorId === endeavorId && run.status === 'active');
+    if (existing) {
+      return this.getConsole(campaignId);
+    }
+
+    const timestamp = nowIso();
+    const sortedObstacleIds = context.obstacles
+      .filter((obstacle) => obstacle.endeavorId === endeavorId)
+      .sort((left, right) => (left.order ?? 0) - (right.order ?? 0))
+      .map((obstacle) => obstacle.id);
+    const firstObstacleId = sortedObstacleIds[0];
+    const run: EndeavorRun = {
+      id: `endeavor-run-${endeavorId}-${context.sessionRun.id}`,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+      revision: 1,
+      sessionRunId: context.sessionRun.id,
+      chapterId: context.chapter.id,
+      sceneNodeId: endeavor.sceneNodeId,
+      endeavorId,
+      status: 'active',
+      trackValues: Object.fromEntries(endeavor.tracks.map((track) => [track.key, Number(context.chapterState.custom[track.key] ?? track.min)])),
+      obstacleStates: sortedObstacleIds.map((obstacleId) => ({
+        obstacleId,
+        status: endeavor.structure === 'unordered' ? 'available' : obstacleId === firstObstacleId ? 'available' : 'locked',
+        attempts: 0,
+      })),
+      selectedOutcomeIds: [],
+      eventIds: [],
+    };
+    context.endeavorRuns.push(run);
+    this.repositories.endeavorRuns.upsert(run);
+    this.appendEvent(
+      context,
+      {
+        kind: 'endeavor.started',
+        sceneNodeId: endeavor.sceneNodeId,
+        actor: { kind: 'scene', id: endeavor.sceneNodeId ?? endeavorId },
+        payload: { endeavorId },
+      },
+      timestamp,
+    );
+
+    return this.getConsole(campaignId);
+  }
+
+  async resolveEndeavorApproach(
+    campaignId: string,
+    runId: string,
+    input: EndeavorApproachResolutionInput,
+  ): Promise<CampaignConsoleData> {
+    this.ensureSeedData();
+    const context = this.loadContext(campaignId);
+    const run = context.endeavorRuns.find((entry) => entry.id === runId);
+    if (!run) {
+      throw new HttpError(404, 'Endeavor run not found.');
+    }
+    const endeavor = context.endeavors.find((entry) => entry.id === run.endeavorId);
+    if (!endeavor) {
+      throw new HttpError(404, 'Endeavor not found.');
+    }
+    const obstacle = context.obstacles.find((entry) => entry.id === input.obstacleId && entry.endeavorId === endeavor.id);
+    const obstacleState = run.obstacleStates.find((entry) => entry.obstacleId === input.obstacleId);
+    if (!obstacle || !obstacleState) {
+      throw new HttpError(404, 'Obstacle not found.');
+    }
+    if (obstacleState.status !== 'available') {
+      throw new HttpError(400, 'Obstacle is not currently available.');
+    }
+    const approach = obstacle.approaches.find((entry) => entry.id === input.approachId);
+    if (!approach) {
+      throw new HttpError(404, 'Approach not found.');
+    }
+
+    const timestamp = nowIso();
+    const effects =
+      input.resolution === 'success'
+        ? approach.onSuccess
+        : input.resolution === 'mixed'
+          ? approach.onMixed ?? approach.onFailure
+          : approach.onFailure;
+    this.applyEndeavorEffects(context, run, effects, input.actor, timestamp);
+    obstacleState.status = 'completed';
+    obstacleState.attempts += 1;
+    obstacleState.lastApproachId = input.approachId;
+    obstacleState.lastResolution = input.resolution;
+    run.updatedAt = timestamp;
+    run.revision += 1;
+    this.unlockNextObstacles(endeavor, run);
+    this.updateEndeavorOutcomeStatus(endeavor, run);
+    this.repositories.endeavorRuns.upsert(run);
+    this.repositories.chapterStates.upsert({
+      ...context.chapterState,
+      updatedAt: timestamp,
+      revision: context.chapterState.revision + 1,
+    });
+    this.appendEvent(
+      context,
+      {
+        kind: 'endeavor.approach.resolved',
+        sceneNodeId: run.sceneNodeId,
+        actor: input.actor,
+        payload: {
+          endeavorId: run.endeavorId,
+          obstacleId: input.obstacleId,
+          approachId: input.approachId,
+          resolution: input.resolution,
+        },
+      },
+      timestamp,
+    );
+    return this.getConsole(campaignId);
+  }
+
+  async adjustEndeavorRun(campaignId: string, runId: string, input: EndeavorRunAdjustmentInput): Promise<CampaignConsoleData> {
+    this.ensureSeedData();
+    const context = this.loadContext(campaignId);
+    const run = context.endeavorRuns.find((entry) => entry.id === runId);
+    if (!run) {
+      throw new HttpError(404, 'Endeavor run not found.');
+    }
+
+    const timestamp = nowIso();
+    for (const [trackKey, delta] of Object.entries(input.trackDeltas ?? {})) {
+      run.trackValues[trackKey] = (run.trackValues[trackKey] ?? 0) + delta;
+      context.chapterState.custom[trackKey] = run.trackValues[trackKey];
+    }
+    if (input.nextStatus) {
+      run.status = input.nextStatus;
+    }
+    run.updatedAt = timestamp;
+    run.revision += 1;
+    this.repositories.endeavorRuns.upsert(run);
+    this.repositories.chapterStates.upsert({
+      ...context.chapterState,
+      updatedAt: timestamp,
+      revision: context.chapterState.revision + 1,
+    });
+    return this.getConsole(campaignId);
+  }
+
+  async createSimulation(input: CreateSimulationInput): Promise<SimulationDefinition> {
+    this.ensureSeedData();
+    return this.simulationService.createDefinition(input);
+  }
+
+  async runSimulation(simulationDefinitionId: string): Promise<SimulationResult> {
+    this.ensureSeedData();
+    return this.simulationService.runSimulation(simulationDefinitionId);
+  }
+
+  async listSimulationResults(simulationDefinitionId: string): Promise<SimulationResult[]> {
+    this.ensureSeedData();
+    return this.simulationService.listResults(simulationDefinitionId);
+  }
+
+  async getAnalytics(campaignId: string): Promise<CampaignAnalyticsSummary> {
+    this.ensureSeedData();
+    return this.simulationService.buildAnalytics(campaignId);
+  }
+
   private ensureSeedData(): void {
     if (this.seedChecked) {
       return;
@@ -437,8 +662,14 @@ export class CampaignConsoleService {
     this.repositories.pcs.saveAll(seed.pcs);
     this.repositories.locations.saveAll(seed.locations);
     this.repositories.rules.saveAll(seed.rules);
+    this.repositories.resourceDefinitions.saveAll(seed.resourceDefinitions);
+    this.repositories.actionDefinitions.saveAll(seed.actionDefinitions);
+    this.repositories.resolutionHooks.saveAll(seed.resolutionHooks);
     this.repositories.rewards.saveAll(seed.rewards);
     this.repositories.favors.saveAll(seed.favors);
+    this.repositories.endeavorRuns.saveAll(seed.endeavorRuns);
+    this.repositories.simulations.saveAll(seed.simulations);
+    this.repositories.simulationResults.saveAll(seed.simulationResults);
     this.repositories.events.saveAll(seed.events);
     this.repositories.diceRolls.saveAll(seed.diceRolls);
     this.seedChecked = true;
@@ -482,6 +713,9 @@ export class CampaignConsoleService {
       pcs: this.repositories.pcs.list().filter((pc) => pc.campaignId === campaign.id),
       locations: this.repositories.locations.list().filter((location) => location.campaignId === campaign.id),
       rules: this.repositories.rules.list(),
+      resourceDefinitions: this.repositories.resourceDefinitions.list(),
+      actionDefinitions: this.repositories.actionDefinitions.list(),
+      resolutionHooks: this.repositories.resolutionHooks.list(),
       hooks: this.repositories.hooks.list().filter((hook) => hook.chapterId === chapter.id),
       conditions: this.repositories.conditions.list(),
       outcomes: this.repositories.outcomes.list().filter((outcome) => outcome.chapterId === chapter.id),
@@ -490,6 +724,11 @@ export class CampaignConsoleService {
       endeavors: this.repositories.endeavors.list().filter((endeavor) => endeavor.chapterId === chapter.id),
       obstacles: this.repositories.obstacles.list(),
       encounters: this.repositories.encounters.list().filter((encounter) => encounter.chapterId === chapter.id),
+      endeavorRuns: this.repositories.endeavorRuns.list().filter((run) => run.sessionRunId === sessionRun.id && run.chapterId === chapter.id),
+      simulations: this.repositories.simulations.list().filter((definition) => definition.campaignId === campaign.id),
+      simulationResults: this.repositories.simulationResults.list().filter((result) =>
+        this.repositories.simulations.list().some((definition) => definition.id === result.simulationDefinitionId && definition.campaignId === campaign.id),
+      ),
       events: this.repositories.events.list().filter((event) => event.sessionRunId === sessionRun.id),
       diceRolls: this.repositories.diceRolls.list().filter((roll) => roll.sessionRunId === sessionRun.id),
     };
@@ -644,6 +883,139 @@ export class CampaignConsoleService {
     };
     context.events.push(event);
     this.repositories.events.upsert(event);
+  }
+
+  private buildRuleContext(context: CampaignContext) {
+    return {
+      ruleMode: context.sessionRun.ruleMode,
+      chapterState: context.chapterState,
+      sessionRun: context.sessionRun,
+      sceneNodes: context.sceneNodes,
+      sceneStates: context.sceneStates,
+      actionDefinitions: context.actionDefinitions,
+      resolutionHooks: context.resolutionHooks,
+      resourceTargets: this.buildResourceTargets(context),
+    };
+  }
+
+  private findActiveEndeavorRun(context: CampaignContext): EndeavorRun | undefined {
+    return context.endeavorRuns.find(
+      (run) =>
+        run.status === 'active' &&
+        (!context.chapterState.activeSceneId || !run.sceneNodeId || run.sceneNodeId === context.chapterState.activeSceneId),
+    ) ?? context.endeavorRuns.find((run) => run.status === 'active');
+  }
+
+  private unlockNextObstacles(endeavor: import('@shared/domain').Endeavor, run: EndeavorRun): void {
+    if (endeavor.structure === 'unordered') {
+      for (const state of run.obstacleStates) {
+        if (state.status === 'locked') {
+          state.status = 'available';
+        }
+      }
+      return;
+    }
+
+    const ordered = [...run.obstacleStates].sort((left, right) => {
+      const leftIndex = endeavor.obstacleIds.indexOf(left.obstacleId);
+      const rightIndex = endeavor.obstacleIds.indexOf(right.obstacleId);
+      return leftIndex - rightIndex;
+    });
+    const next = ordered.find((state) => state.status === 'locked');
+    if (next) {
+      next.status = 'available';
+    }
+  }
+
+  private updateEndeavorOutcomeStatus(endeavor: import('@shared/domain').Endeavor, run: EndeavorRun): void {
+    for (const track of endeavor.tracks) {
+      const value = run.trackValues[track.key] ?? track.min;
+      if (track.failureAt !== undefined && value >= track.failureAt) {
+        run.status = 'failure';
+        return;
+      }
+      if (track.successAt !== undefined && value >= track.successAt) {
+        run.status = 'success';
+      }
+    }
+  }
+
+  private applyEndeavorEffects(
+    context: CampaignContext,
+    run: EndeavorRun,
+    effects: Outcome['effects'],
+    actor: EntityPointer | undefined,
+    timestamp: string,
+  ): void {
+    for (const effect of effects) {
+      switch (effect.type) {
+        case 'resource-delta': {
+          if (!effect.key) {
+            break;
+          }
+          const delta = Number(effect.value ?? 0);
+          run.trackValues[effect.key] = (run.trackValues[effect.key] ?? 0) + delta;
+          context.chapterState.custom[effect.key] = run.trackValues[effect.key];
+          break;
+        }
+        case 'set-flag':
+          if (effect.key) {
+            context.chapterState.flags[effect.key] = Boolean(effect.value);
+          }
+          break;
+        case 'set-counter':
+          if (effect.key) {
+            context.chapterState.counters[effect.key] = Number(effect.value ?? 0);
+          }
+          break;
+        case 'inc-counter':
+          if (effect.key) {
+            context.chapterState.counters[effect.key] = (context.chapterState.counters[effect.key] ?? 0) + Number(effect.value ?? 0);
+          }
+          break;
+        case 'set-escalation':
+          context.chapterState.escalation = Number(effect.value ?? context.chapterState.escalation);
+          break;
+        case 'grant-reward':
+          if (effect.referenceId) {
+            uniquePush(context.chapterState.rewardIds, effect.referenceId);
+          }
+          break;
+        case 'grant-favor':
+          if (effect.referenceId) {
+            context.chapterState.favorUsesById[effect.referenceId] = 0;
+          }
+          break;
+        case 'apply-condition':
+          if (actor && effect.referenceId) {
+            this.appendEvent(
+              context,
+              {
+                kind: 'condition.applied',
+                actor,
+                payload: { entityKind: actor.kind, entityId: actor.id, conditionId: effect.referenceId },
+              },
+              timestamp,
+            );
+          }
+          break;
+        case 'remove-condition':
+          if (actor && effect.referenceId) {
+            this.appendEvent(
+              context,
+              {
+                kind: 'condition.removed',
+                actor,
+                payload: { entityKind: actor.kind, entityId: actor.id, conditionId: effect.referenceId },
+              },
+              timestamp,
+            );
+          }
+          break;
+        default:
+          break;
+      }
+    }
   }
 
   private assertEntityExists(context: CampaignContext, entity: EntityPointer): void {

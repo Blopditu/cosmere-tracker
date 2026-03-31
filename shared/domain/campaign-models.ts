@@ -15,6 +15,18 @@ export type SceneNodeStatus = 'locked' | 'available' | 'active' | 'completed' | 
 export type HookMode = 'active' | 'passive';
 export type EndeavorKind = 'pursuit' | 'infiltration' | 'exploration' | 'mission' | 'discovery';
 export type EncounterStatus = 'planned' | 'active' | 'paused' | 'finished';
+export type ImportCandidateKind =
+  | 'rule-section'
+  | 'resource-definition'
+  | 'action-definition'
+  | 'condition-definition'
+  | 'duration-mechanic'
+  | 'combat-procedure'
+  | 'conversation-procedure'
+  | 'endeavor-procedure';
+export type ImportCandidateDecision = 'pending' | 'accepted' | 'edited' | 'rejected' | 'split' | 'merged' | 'published';
+export type ImportArtifactStatus = 'registered' | 'review' | 'published';
+export type ReviewDecisionAction = 'accept' | 'edit' | 'reject' | 'split' | 'merge';
 export type EventKind =
   | 'scene.activated'
   | 'scene.completed'
@@ -31,9 +43,13 @@ export type EventKind =
   | 'condition.removed'
   | 'dice.rolled'
   | 'outcome.applied'
+  | 'rule.override'
+  | 'endeavor.started'
+  | 'endeavor.approach.resolved'
   | 'combat.started'
   | 'combat.action'
   | 'combat.finished'
+  | 'simulation.ran'
   | 'note.captured';
 
 export interface BaseRecord {
@@ -51,6 +67,61 @@ export interface SourceRef {
   pageEnd?: number;
   excerpt?: string;
   confidence: number;
+}
+
+export interface BoundingBox {
+  x0: number;
+  y0: number;
+  x1: number;
+  y1: number;
+}
+
+export interface ImportArtifactManifest {
+  documentId: ID;
+  sourceKind: SourceKind;
+  profile: string;
+  title: string;
+  sourcePath: string;
+  fileChecksum: string;
+  extractorVersion: string;
+  extractedAt: ISODateTime;
+  pageCount: number;
+}
+
+export interface ImportedPageArtifact {
+  documentId: ID;
+  pageNumber: number;
+  width: number;
+  height: number;
+  wordCount: number;
+  checksum: string;
+  previewText: string;
+  hasText: boolean;
+  needsOcr: boolean;
+}
+
+export interface ImportedBlockArtifact {
+  id: ID;
+  documentId: ID;
+  pageNumber: number;
+  blockIndex: number;
+  kind: 'heading' | 'body' | 'list' | 'quote';
+  headingLevel?: number;
+  bbox: BoundingBox;
+  text: string;
+  checksum: string;
+}
+
+export interface ImportedCandidateArtifact {
+  id: ID;
+  documentId: ID;
+  kind: ImportCandidateKind;
+  title: string;
+  key: string;
+  confidence: number;
+  excerpt: string;
+  sourceBlockIds: ID[];
+  payload: Record<string, JsonValue>;
 }
 
 export interface TextBlock {
@@ -555,6 +626,19 @@ export interface SimulationDefinition extends BaseRecord {
   encounterSetupId?: ID;
   endeavorId?: ID;
   iterationCount: number;
+  seed?: number;
+  variableMatrix: Record<string, JsonValue[]>;
+  assumptions: string[];
+}
+
+export interface CreateSimulationInput {
+  campaignId: ID;
+  label: string;
+  kind: SimulationDefinition['kind'];
+  encounterSetupId?: ID;
+  endeavorId?: ID;
+  iterationCount: number;
+  seed?: number;
   variableMatrix: Record<string, JsonValue[]>;
   assumptions: string[];
 }
@@ -581,12 +665,28 @@ export interface ResourceDefinition extends BaseRecord {
 }
 
 export interface RuleEffect {
-  type: 'resource-delta' | 'apply-condition' | 'remove-condition' | 'progress-delta' | 'log-warning';
+  type:
+    | 'resource-delta'
+    | 'apply-condition'
+    | 'remove-condition'
+    | 'progress-delta'
+    | 'log-warning'
+    | 'set-flag'
+    | 'inc-counter'
+    | 'conversation-focus-delta'
+    | 'advance-turn'
+    | 'set-turn-phase'
+    | 'consume-favor'
+    | 'tick-duration';
   resourceKey?: string;
   delta?: number;
   conditionId?: ID;
   trackKey?: string;
   message?: string;
+  key?: string;
+  value?: JsonValue;
+  favorId?: ID;
+  phase?: string;
 }
 
 export interface ActionDefinition extends BaseRecord {
@@ -597,7 +697,9 @@ export interface ActionDefinition extends BaseRecord {
   requiresTarget: boolean;
   requiresRoll: boolean;
   defaultCosts: Record<string, number>;
+  preconditions: StateExpression[];
   tags: string[];
+  resolutionTags: string[];
   effects: RuleEffect[];
   ruleReferenceIds: ID[];
 }
@@ -613,10 +715,215 @@ export interface ResolutionHook extends BaseRecord {
     | 'condition.tick'
     | 'endeavor.approach.resolve';
   mode: 'suggest' | 'enforce';
+  phase?: ActionDefinition['phase'];
+  resolutionTags?: string[];
   conditions: StateExpression[];
   messages: Array<{ severity: 'info' | 'warning' | 'error'; text: string }>;
   effects: RuleEffect[];
   ruleReferenceIds: ID[];
+}
+
+export interface SourceDocument extends BaseRecord {
+  sourceKind: SourceKind;
+  title: string;
+  profile: string;
+  sourcePath: string;
+  checksum: string;
+  extractorVersion: string;
+  pageCount: number;
+  artifactPath: string;
+  status: ImportArtifactStatus;
+  latestBatchId?: ID;
+}
+
+export interface SourcePage extends BaseRecord {
+  documentId: ID;
+  pageNumber: number;
+  width: number;
+  height: number;
+  wordCount: number;
+  checksum: string;
+  previewText: string;
+  hasText: boolean;
+  needsOcr: boolean;
+}
+
+export interface SourceBlock extends BaseRecord {
+  documentId: ID;
+  pageNumber: number;
+  blockIndex: number;
+  kind: ImportedBlockArtifact['kind'];
+  headingLevel?: number;
+  bbox: BoundingBox;
+  text: string;
+  checksum: string;
+}
+
+export interface ImportBatch extends BaseRecord {
+  documentId: ID;
+  artifactPath: string;
+  profile: string;
+  extractorVersion: string;
+  sourceChecksum: string;
+  status: ImportArtifactStatus;
+  candidateCount: number;
+  acceptedCount: number;
+  rejectedCount: number;
+}
+
+export interface ImportCandidate extends BaseRecord {
+  batchId: ID;
+  documentId: ID;
+  kind: ImportCandidateKind;
+  title: string;
+  key: string;
+  confidence: number;
+  excerpt: string;
+  sourceBlockIds: ID[];
+  payload: Record<string, JsonValue>;
+  decision: ImportCandidateDecision;
+  supersededByIds: ID[];
+}
+
+export interface ReviewDecision extends BaseRecord {
+  candidateId: ID;
+  action: ReviewDecisionAction;
+  note?: string;
+  payload?: Record<string, JsonValue>;
+  mergeCandidateIds?: ID[];
+  splitCandidateIds?: ID[];
+}
+
+export interface PublishedArtifactRef extends BaseRecord {
+  documentId: ID;
+  batchId: ID;
+  candidateId: ID;
+  publishedEntityKind: 'ruleReference' | 'resourceDefinition' | 'actionDefinition' | 'condition' | 'resolutionHook';
+  publishedEntityId: ID;
+}
+
+export interface RegisterArtifactInput {
+  artifactPath: string;
+}
+
+export interface ReviewDecisionInput {
+  action: ReviewDecisionAction;
+  title?: string;
+  key?: string;
+  note?: string;
+  payload?: Record<string, JsonValue>;
+  mergeCandidateIds?: ID[];
+  splitCandidates?: Array<{
+    title: string;
+    key: string;
+    kind: ImportCandidateKind;
+    excerpt: string;
+    sourceBlockIds: ID[];
+    payload: Record<string, JsonValue>;
+  }>;
+}
+
+export interface ImportDocumentSummary {
+  document: SourceDocument;
+  batch?: ImportBatch;
+  pendingCount: number;
+  acceptedCount: number;
+  rejectedCount: number;
+  publishedCount: number;
+}
+
+export interface ImportReviewDocumentData {
+  summary: ImportDocumentSummary;
+  pages: SourcePage[];
+  candidates: ImportCandidate[];
+}
+
+export interface ImportReviewCandidateDetail {
+  candidate: ImportCandidate;
+  blocks: SourceBlock[];
+  pageNumbers: number[];
+  decisions: ReviewDecision[];
+}
+
+export interface RuleAdvisory {
+  severity: 'info' | 'warning' | 'error';
+  message: string;
+  blocking: boolean;
+  ruleReferenceIds: ID[];
+}
+
+export interface RuleEvaluationRequest {
+  campaignId: ID;
+  sceneNodeId?: ID;
+  phase: ActionDefinition['phase'];
+  trigger: ResolutionHook['when'];
+  actionKey?: string;
+  actor?: EntityPointer;
+  target?: EntityPointer;
+  approachId?: ID;
+  resolutionTags?: string[];
+}
+
+export interface RuleEvaluationResult {
+  mode: RuleMode;
+  allowed: boolean;
+  requiresOverride: boolean;
+  advisories: RuleAdvisory[];
+  proposedEffects: RuleEffect[];
+  action?: ActionDefinition;
+  matchingHookIds: ID[];
+}
+
+export interface EndeavorObstacleState {
+  obstacleId: ID;
+  status: 'locked' | 'available' | 'completed' | 'bypassed';
+  attempts: number;
+  lastApproachId?: ID;
+  lastResolution?: 'success' | 'mixed' | 'failure';
+}
+
+export interface EndeavorRun extends BaseRecord {
+  sessionRunId: ID;
+  chapterId: ID;
+  sceneNodeId?: ID;
+  endeavorId: ID;
+  status: 'active' | 'success' | 'failure' | 'abandoned';
+  trackValues: Record<string, number>;
+  obstacleStates: EndeavorObstacleState[];
+  selectedOutcomeIds: ID[];
+  eventIds: ID[];
+}
+
+export interface EndeavorApproachResolutionInput {
+  obstacleId: ID;
+  approachId: ID;
+  resolution: 'success' | 'mixed' | 'failure';
+  actor?: EntityPointer;
+}
+
+export interface EndeavorRunAdjustmentInput {
+  trackDeltas?: Record<string, number>;
+  notes?: string;
+  nextStatus?: EndeavorRun['status'];
+}
+
+export interface AnalyticsBucket {
+  key: string;
+  count: number;
+  average?: number;
+}
+
+export interface CampaignAnalyticsSummary {
+  diceByTag: AnalyticsBucket[];
+  resourceBurnByKey: AnalyticsBucket[];
+  favorUsageById: AnalyticsBucket[];
+  conditionUsageById: AnalyticsBucket[];
+  simulationComparisons: Array<{
+    simulationDefinitionId: ID;
+    label: string;
+    expectedSuccessRate: number;
+    actualStatus?: 'success' | 'failure' | 'in-progress';
+  }>;
 }
 
 export interface ResolvedSceneNode extends SceneNode {
@@ -680,6 +987,13 @@ export interface CampaignConsoleData {
   endeavors: Endeavor[];
   obstacles: Obstacle[];
   encounters: EncounterSetup[];
+  resourceDefinitions: ResourceDefinition[];
+  actionDefinitions: ActionDefinition[];
+  resolutionHooks: ResolutionHook[];
+  activeEndeavorRun?: EndeavorRun;
+  ruleAdvisories: RuleAdvisory[];
+  analytics: CampaignAnalyticsSummary;
+  simulationResults: SimulationResult[];
   runtime: RuntimeCommandState;
 }
 

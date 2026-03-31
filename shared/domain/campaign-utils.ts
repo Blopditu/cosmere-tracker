@@ -1,10 +1,12 @@
 import {
   AppliedCondition,
   CampaignConsoleData,
+  CampaignAnalyticsSummary,
   Chapter,
   ChapterState,
   Condition,
   DiceRoll,
+  EndeavorRun,
   EventLogEntry,
   Favor,
   GMOverride,
@@ -30,6 +32,11 @@ import {
   EncounterSetup,
   Reward,
   Endeavor,
+  ActionDefinition,
+  ResourceDefinition,
+  ResolutionHook,
+  RuleAdvisory,
+  SimulationResult,
   RuntimeCommandState,
 } from './campaign-models';
 
@@ -313,6 +320,13 @@ export function buildCampaignConsoleData(params: {
   endeavors: Endeavor[];
   obstacles: Obstacle[];
   encounters: EncounterSetup[];
+  resourceDefinitions: ResourceDefinition[];
+  actionDefinitions: ActionDefinition[];
+  resolutionHooks: ResolutionHook[];
+  activeEndeavorRun?: EndeavorRun;
+  ruleAdvisories: RuleAdvisory[];
+  analytics: CampaignAnalyticsSummary;
+  simulationResults: SimulationResult[];
   sessionRun: SessionRun;
   recentEvents: EventLogEntry[];
   recentDiceRolls: DiceRoll[];
@@ -342,6 +356,13 @@ export function buildCampaignConsoleData(params: {
     endeavors: params.endeavors,
     obstacles: params.obstacles,
     encounters: params.encounters,
+    resourceDefinitions: params.resourceDefinitions,
+    actionDefinitions: params.actionDefinitions,
+    resolutionHooks: params.resolutionHooks,
+    activeEndeavorRun: params.activeEndeavorRun,
+    ruleAdvisories: params.ruleAdvisories,
+    analytics: params.analytics,
+    simulationResults: params.simulationResults,
     runtime: {
       sessionRun: params.sessionRun,
       chapterState: params.chapterState,

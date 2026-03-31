@@ -1,4 +1,5 @@
 import {
+  ActionDefinition,
   BlockOverride,
   Campaign,
   Chapter,
@@ -7,6 +8,7 @@ import {
   DiceRoll,
   DeepPartial,
   Endeavor,
+  EndeavorRun,
   EncounterSetup,
   EventLogEntry,
   Favor,
@@ -18,12 +20,16 @@ import {
   Obstacle,
   Outcome,
   PC,
+  ResolutionHook,
+  ResourceDefinition,
   Reward,
   RuleReference,
   SceneEdge,
   SceneNode,
   SceneState,
   SessionRun,
+  SimulationDefinition,
+  SimulationResult,
   SourceKind,
   SourceRef,
   TextBlock,
@@ -48,8 +54,14 @@ export interface CampaignSeedData {
   pcs: PC[];
   locations: Location[];
   rules: RuleReference[];
+  resourceDefinitions: ResourceDefinition[];
+  actionDefinitions: ActionDefinition[];
+  resolutionHooks: ResolutionHook[];
   rewards: Reward[];
   favors: Favor[];
+  endeavorRuns: EndeavorRun[];
+  simulations: SimulationDefinition[];
+  simulationResults: SimulationResult[];
   events: EventLogEntry[];
   diceRolls: DiceRoll[];
 }
@@ -847,6 +859,141 @@ export function buildCampaignSeed(): CampaignSeedData {
     },
   ];
 
+  const resourceDefinitions: ResourceDefinition[] = [
+    {
+      ...baseRecord('resource-health'),
+      key: 'health',
+      label: 'Health',
+      min: 0,
+      max: 20,
+      defaultValue: 12,
+      warningAt: 5,
+      ruleReferenceIds: ['rule-fast-turn'],
+    },
+    {
+      ...baseRecord('resource-focus'),
+      key: 'focus',
+      label: 'Focus',
+      min: 0,
+      max: 10,
+      defaultValue: 4,
+      warningAt: 1,
+      ruleReferenceIds: ['rule-conversation-focus'],
+    },
+    {
+      ...baseRecord('resource-investiture'),
+      key: 'investiture',
+      label: 'Investiture',
+      min: 0,
+      max: 5,
+      defaultValue: 1,
+      warningAt: 0,
+      ruleReferenceIds: ['rule-fast-turn'],
+    },
+  ];
+
+  const actionDefinitions: ActionDefinition[] = [
+    {
+      ...baseRecord('action-present-pass'),
+      key: 'present-pass',
+      label: 'Present the pass',
+      phase: 'endeavor',
+      actionType: 'action',
+      requiresTarget: false,
+      requiresRoll: false,
+      defaultCosts: { focus: 1 },
+      preconditions: [],
+      tags: ['endeavor', 'official', 'papers'],
+      resolutionTags: ['infiltration', 'official', 'papers'],
+      effects: [{ type: 'progress-delta', trackKey: 'infiltrationProgress', delta: 1 }],
+      ruleReferenceIds: ['rule-stealth-infiltration'],
+    },
+    {
+      ...baseRecord('action-shadowed-wall'),
+      key: 'shadowed-wall',
+      label: 'Shadowed wall climb',
+      phase: 'endeavor',
+      actionType: 'action',
+      requiresTarget: false,
+      requiresRoll: true,
+      defaultCosts: { focus: 1 },
+      preconditions: [],
+      tags: ['endeavor', 'stealth', 'athletics'],
+      resolutionTags: ['infiltration', 'stealth'],
+      effects: [{ type: 'progress-delta', trackKey: 'infiltrationProgress', delta: 1 }],
+      ruleReferenceIds: ['rule-stealth-infiltration'],
+    },
+    {
+      ...baseRecord('action-blend-with-novices'),
+      key: 'blend-with-novices',
+      label: 'Blend with novices',
+      phase: 'conversation',
+      actionType: 'action',
+      requiresTarget: false,
+      requiresRoll: true,
+      defaultCosts: { focus: 1 },
+      preconditions: [],
+      tags: ['conversation', 'deception', 'social'],
+      resolutionTags: ['infiltration', 'social'],
+      effects: [{ type: 'conversation-focus-delta', delta: 1 }],
+      ruleReferenceIds: ['rule-conversation-focus'],
+    },
+    {
+      ...baseRecord('action-fast-turn-feint'),
+      key: 'fast-turn-feint',
+      label: 'Fast turn feint',
+      phase: 'combat',
+      actionType: 'action',
+      requiresTarget: true,
+      requiresRoll: true,
+      defaultCosts: { focus: 1 },
+      preconditions: [],
+      tags: ['combat', 'fast-turn'],
+      resolutionTags: ['combat', 'fast-turn'],
+      effects: [{ type: 'log-warning', message: 'Fast turns trade force for tempo.' }],
+      ruleReferenceIds: ['rule-fast-turn'],
+    },
+  ];
+
+  const resolutionHooks: ResolutionHook[] = [
+    {
+      ...baseRecord('resolution-hook-high-alert'),
+      key: 'high-alert',
+      when: 'endeavor.approach.resolve',
+      mode: 'suggest',
+      phase: 'endeavor',
+      resolutionTags: ['infiltration', 'stealth'],
+      conditions: [{ all: [{ scope: 'custom', key: 'monasteryAlert', op: 'gte', value: 2 }] }],
+      messages: [{ severity: 'warning', text: 'Alert is already elevated. Another noisy result may force the escape beat early.' }],
+      effects: [],
+      ruleReferenceIds: ['rule-stealth-infiltration'],
+    },
+    {
+      ...baseRecord('resolution-hook-contact-pressure'),
+      key: 'contact-pressure',
+      when: 'conversation.exchange',
+      mode: 'suggest',
+      phase: 'conversation',
+      resolutionTags: ['social'],
+      conditions: [{ all: [{ scope: 'chapter.counter', key: 'contactTrust', op: 'lte', value: 0 }] }],
+      messages: [{ severity: 'warning', text: 'Lanor is still guarded. Leaning too hard should cost trust or future favors.' }],
+      effects: [],
+      ruleReferenceIds: ['rule-conversation-focus'],
+    },
+    {
+      ...baseRecord('resolution-hook-fast-turn'),
+      key: 'fast-turn-tradeoff',
+      when: 'action.attempt',
+      mode: 'suggest',
+      phase: 'combat',
+      resolutionTags: ['fast-turn'],
+      conditions: [],
+      messages: [{ severity: 'info', text: 'Fast turns favor tempo and setup more than raw impact.' }],
+      effects: [],
+      ruleReferenceIds: ['rule-fast-turn'],
+    },
+  ];
+
   const endeavors: Endeavor[] = [
     {
       ...baseRecord('endeavor-monastery-infiltration'),
@@ -1237,6 +1384,10 @@ export function buildCampaignSeed(): CampaignSeedData {
     ruleMode: 'assistive',
   };
 
+  const endeavorRuns: EndeavorRun[] = [];
+  const simulations: SimulationDefinition[] = [];
+  const simulationResults: SimulationResult[] = [];
+
   const sceneStates: SceneState[] = [
     {
       ...baseRecord('scene-state-scout-lines'),
@@ -1417,8 +1568,14 @@ export function buildCampaignSeed(): CampaignSeedData {
     pcs,
     locations,
     rules,
+    resourceDefinitions,
+    actionDefinitions,
+    resolutionHooks,
     rewards,
     favors,
+    endeavorRuns,
+    simulations,
+    simulationResults,
     events,
     diceRolls,
   };
