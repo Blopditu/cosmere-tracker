@@ -1,0 +1,1425 @@
+import {
+  BlockOverride,
+  Campaign,
+  Chapter,
+  ChapterState,
+  Condition,
+  DiceRoll,
+  DeepPartial,
+  Endeavor,
+  EncounterSetup,
+  EventLogEntry,
+  Favor,
+  Hook,
+  Layered,
+  Location,
+  NPC,
+  NPCAppearance,
+  Obstacle,
+  Outcome,
+  PC,
+  Reward,
+  RuleReference,
+  SceneEdge,
+  SceneNode,
+  SceneState,
+  SessionRun,
+  SourceKind,
+  SourceRef,
+  TextBlock,
+} from '@shared/domain';
+
+export interface CampaignSeedData {
+  campaigns: Campaign[];
+  chapters: Chapter[];
+  chapterStates: ChapterState[];
+  sessionRuns: SessionRun[];
+  sceneNodes: SceneNode[];
+  sceneEdges: SceneEdge[];
+  sceneStates: SceneState[];
+  hooks: Hook[];
+  conditions: Condition[];
+  outcomes: Outcome[];
+  endeavors: Endeavor[];
+  obstacles: Obstacle[];
+  encounters: EncounterSetup[];
+  npcs: NPC[];
+  npcAppearances: NPCAppearance[];
+  pcs: PC[];
+  locations: Location[];
+  rules: RuleReference[];
+  rewards: Reward[];
+  favors: Favor[];
+  events: EventLogEntry[];
+  diceRolls: DiceRoll[];
+}
+
+const timestamp = '2026-03-31T18:30:00.000Z';
+
+function baseRecord(id: string) {
+  return {
+    id,
+    createdAt: timestamp,
+    updatedAt: timestamp,
+    revision: 1,
+  };
+}
+
+function textBlock(id: string, kind: TextBlock['kind'], text: string): TextBlock {
+  return { id, kind, text };
+}
+
+function sourceRef(
+  sourceKind: SourceKind,
+  locator: string,
+  pageStart: number,
+  excerpt: string,
+  confidence = 0.9,
+): SourceRef {
+  return {
+    documentId: `${sourceKind}-doc`,
+    sourceKind,
+    locator,
+    pageStart,
+    excerpt,
+    confidence,
+  };
+}
+
+function layered<T>(
+  value: T,
+  refs: SourceRef[],
+  gm?: {
+    patch?: DeepPartial<T>;
+    blockOverrides?: BlockOverride[];
+  },
+): Layered<T> {
+  return {
+    source: {
+      value,
+      importBatchId: refs[0]?.sourceKind ?? 'seed-import',
+      importedAt: timestamp,
+      locked: true,
+      refs,
+    },
+    gm: gm
+      ? {
+          patch: gm.patch,
+          blockOverrides: gm.blockOverrides,
+          basedOnSourceRevision: 1,
+          updatedAt: timestamp,
+        }
+      : undefined,
+  };
+}
+
+export function buildCampaignSeed(): CampaignSeedData {
+  const campaignId = 'stonewalkers-campaign';
+  const chapterId = 'chapter-2-splintered-warcamp';
+  const sessionRunId = 'run-stonewalkers-ch2';
+
+  const searchSceneIds = [
+    'scene-scout-lines',
+    'scene-quartermaster-stores',
+    'scene-field-infirmary',
+    'scene-rival-campfire',
+  ];
+
+  const scenes: SceneNode[] = [
+    {
+      ...baseRecord('scene-scout-lines'),
+      campaignId,
+      chapterId,
+      key: 'c2-scout-lines',
+      title: 'Scout Lines',
+      sceneKind: 'investigation',
+      board: { x: 0, y: 0, lane: 'search' },
+      content: layered(
+        {
+          summaryBlocks: [textBlock('scene-scout-lines-summary-1', 'summary', 'Search the fringe scout tents for patrol rhythm and hand-off routes.')],
+          gmBlocks: [textBlock('scene-scout-lines-gm-1', 'gm', 'A runner named Relis has memorized the patrol gaps but only offers them to people who help him first.')],
+          hiddenTruthBlocks: [textBlock('scene-scout-lines-truth-1', 'truth', 'The safe route toward the monastery crosses the same blind point the scouts ignore at dawn.')],
+          noteBlocks: [textBlock('scene-scout-lines-note-1', 'note', 'Good first scene if the table wants immediate motion instead of politics.')],
+        },
+        [sourceRef('stonewalkers-adventure', 'Chapter 2 / Scout Lines', 44, 'The warcamp edge hides the pattern the heroes need.')],
+        {
+          blockOverrides: [
+            {
+              id: 'scene-scout-lines-gm-override',
+              op: 'insertAfter',
+              targetBlockId: 'scene-scout-lines-gm-1',
+              newText: 'If the players stall, let Relis volunteer one clue in exchange for a promise to clear his debt with the quartermaster.',
+            },
+          ],
+        },
+      ),
+      passiveHookIds: ['hook-scout-lines-passive'],
+      activeHookIds: ['hook-scout-lines-active'],
+      unlockWhen: [],
+      linkedNpcAppearanceIds: ['appearance-lanor-scout-lines'],
+      linkedAdversaryTemplateIds: [],
+      linkedLocationIds: ['location-warcamp'],
+      linkedRuleReferenceIds: ['rule-conversation-focus'],
+      outcomeIds: ['outcome-scout-pattern'],
+      tags: ['search', 'intel'],
+      sourceRefs: [sourceRef('stonewalkers-adventure', 'Chapter 2 / Scout Lines', 44, 'Scout lines')],
+    },
+    {
+      ...baseRecord('scene-quartermaster-stores'),
+      campaignId,
+      chapterId,
+      key: 'c2-quartermaster-stores',
+      title: 'Quartermaster Stores',
+      sceneKind: 'investigation',
+      board: { x: 1, y: 0, lane: 'search' },
+      content: layered(
+        {
+          summaryBlocks: [textBlock('scene-quartermaster-summary-1', 'summary', 'Search the stores for forged requisition marks and borrowed access.')],
+          gmBlocks: [textBlock('scene-quartermaster-gm-1', 'gm', 'Boxes marked for monastery repairs carry the same seal the contact mentioned in chapter one.')],
+          hiddenTruthBlocks: [textBlock('scene-quartermaster-truth-1', 'truth', 'A supply pass can bypass the outer gate if the players present it with confidence.')],
+          noteBlocks: [textBlock('scene-quartermaster-note-1', 'note', 'Best scene to hand out the favor that turns into the calm infiltration route.')],
+        },
+        [sourceRef('stonewalkers-gm-tools', 'Chapter 2 / Stores Access Pattern', 12, 'The stores contain a usable pass.')],
+        {
+          blockOverrides: [
+            {
+              id: 'scene-quartermaster-gm-replace',
+              op: 'replace',
+              targetBlockId: 'scene-quartermaster-gm-1',
+              newText: 'Boxes marked for monastery repairs carry a seal that can be copied or borrowed, depending on how brazen the players are.',
+            },
+          ],
+        },
+      ),
+      passiveHookIds: ['hook-quartermaster-passive'],
+      activeHookIds: ['hook-quartermaster-active'],
+      unlockWhen: [],
+      linkedNpcAppearanceIds: ['appearance-lanor-quartermaster'],
+      linkedAdversaryTemplateIds: [],
+      linkedLocationIds: ['location-warcamp'],
+      linkedRuleReferenceIds: ['rule-conversation-focus'],
+      outcomeIds: ['outcome-quartermaster-pass'],
+      tags: ['search', 'favor'],
+      sourceRefs: [sourceRef('stonewalkers-adventure', 'Chapter 2 / Quartermaster', 46, 'Stores and seals')],
+    },
+    {
+      ...baseRecord('scene-field-infirmary'),
+      campaignId,
+      chapterId,
+      key: 'c2-field-infirmary',
+      title: 'Field Infirmary',
+      sceneKind: 'social',
+      board: { x: 2, y: 0, lane: 'search' },
+      content: layered(
+        {
+          summaryBlocks: [textBlock('scene-infirmary-summary-1', 'summary', 'Search the infirmary for rumors, wounded witnesses, and monastery casualty reports.')],
+          gmBlocks: [textBlock('scene-infirmary-gm-1', 'gm', 'Sister Tava knows who vanished after the last monastery delivery, but she hates obvious interrogation.')],
+          hiddenTruthBlocks: [textBlock('scene-infirmary-truth-1', 'truth', 'Tava already hid one wounded acolyte and can become a later ally if treated gently.')],
+          noteBlocks: [textBlock('scene-infirmary-note-1', 'note', 'Use this scene to pivot toward empathy if the table is in investigation overdrive.')],
+        },
+        [sourceRef('stonewalkers-adventure', 'Chapter 2 / Infirmary', 48, 'The infirmary holds the cleanest witness.')],
+        {
+          blockOverrides: [
+            {
+              id: 'scene-infirmary-gm-insert',
+              op: 'insertAfter',
+              targetBlockId: 'scene-infirmary-gm-1',
+              newText: 'Keep the tone hushed. This scene should feel like trespassing through pain, not looting for clues.',
+            },
+          ],
+        },
+      ),
+      passiveHookIds: ['hook-infirmary-passive'],
+      activeHookIds: ['hook-infirmary-active'],
+      unlockWhen: [],
+      linkedNpcAppearanceIds: ['appearance-tava-infirmary'],
+      linkedAdversaryTemplateIds: [],
+      linkedLocationIds: ['location-warcamp'],
+      linkedRuleReferenceIds: ['rule-conversation-focus'],
+      outcomeIds: ['outcome-infirmary-rumor'],
+      tags: ['search', 'active'],
+      sourceRefs: [sourceRef('stonewalkers-adventure', 'Chapter 2 / Infirmary', 48, 'Infirmary rumor trail')],
+    },
+    {
+      ...baseRecord('scene-rival-campfire'),
+      campaignId,
+      chapterId,
+      key: 'c2-rival-campfire',
+      title: 'Rival Campfire',
+      sceneKind: 'social',
+      board: { x: 3, y: 0, lane: 'search' },
+      content: layered(
+        {
+          summaryBlocks: [textBlock('scene-campfire-summary-1', 'summary', 'Trade stories with rival scouts who hate the quartermaster more than they hate strangers.')],
+          gmBlocks: [textBlock('scene-campfire-gm-1', 'gm', 'The campfire group will talk if the players offer real gossip, not just questions.')],
+          hiddenTruthBlocks: [textBlock('scene-campfire-truth-1', 'truth', 'One scout saw the contact slipping toward the monastery with a copied seal two nights ago.')],
+          noteBlocks: [textBlock('scene-campfire-note-1', 'note', 'Best use for tables that enjoy banter and soft leverage.')],
+        },
+        [sourceRef('stonewalkers-gm-tools', 'Chapter 2 / Campfire Gossip', 18, 'A passive gossip node that can accelerate trust.')],
+      ),
+      passiveHookIds: ['hook-campfire-passive'],
+      activeHookIds: ['hook-campfire-active'],
+      unlockWhen: [],
+      linkedNpcAppearanceIds: ['appearance-amaram-shadow'],
+      linkedAdversaryTemplateIds: [],
+      linkedLocationIds: ['location-warcamp'],
+      linkedRuleReferenceIds: ['rule-conversation-focus'],
+      outcomeIds: ['outcome-campfire-trust'],
+      tags: ['search', 'trust'],
+      sourceRefs: [sourceRef('stonewalkers-gm-tools', 'Chapter 2 / Campfire Gossip', 18, 'Rival campfire')],
+    },
+    {
+      ...baseRecord('scene-contact-meeting'),
+      campaignId,
+      chapterId,
+      key: 'c2-contact-meeting',
+      title: 'Later Contact',
+      sceneKind: 'social',
+      board: { x: 1, y: 1, lane: 'convergence' },
+      content: layered(
+        {
+          summaryBlocks: [textBlock('scene-contact-summary-1', 'summary', 'Meet the contact once the party has enough fragments to ask the right question.')],
+          gmBlocks: [textBlock('scene-contact-gm-1', 'gm', 'Lanor waits beneath a patched awning and only commits when the players show they know which seal matters.')],
+          hiddenTruthBlocks: [textBlock('scene-contact-truth-1', 'truth', 'Lanor is terrified of Amaram’s shadow network and wants a clean exit, not heroics.')],
+          noteBlocks: [textBlock('scene-contact-note-1', 'note', 'This scene should feel like earned momentum, not a lore dump.')],
+        },
+        [sourceRef('stonewalkers-adventure', 'Chapter 2 / Contact', 52, 'The contact confirms the monastery angle.')],
+        {
+          blockOverrides: [
+            {
+              id: 'scene-contact-gm-insert',
+              op: 'insertAfter',
+              targetBlockId: 'scene-contact-gm-1',
+              newText: 'If the players overplay certainty, let Lanor test them with one wrong detail before offering the real route.',
+            },
+          ],
+        },
+      ),
+      passiveHookIds: ['hook-contact-passive'],
+      activeHookIds: ['hook-contact-active'],
+      unlockWhen: [
+        {
+          any: [
+            { scope: 'chapter.counter', key: 'warcampIntel', op: 'gte', value: 2 },
+            { scope: 'scene.status', key: 'scene-rival-campfire', op: 'eq', value: 'completed' },
+          ],
+        },
+      ],
+      linkedNpcAppearanceIds: ['appearance-lanor-contact', 'appearance-amaram-shadow'],
+      linkedAdversaryTemplateIds: [],
+      linkedLocationIds: ['location-warcamp'],
+      linkedRuleReferenceIds: ['rule-conversation-focus'],
+      outcomeIds: ['outcome-contact-trust'],
+      tags: ['convergence'],
+      sourceRefs: [sourceRef('stonewalkers-adventure', 'Chapter 2 / Contact', 52, 'Later contact')],
+    },
+    {
+      ...baseRecord('scene-monastery-infiltration'),
+      campaignId,
+      chapterId,
+      key: 'c2-monastery-infiltration',
+      title: 'Monastery Infiltration',
+      sceneKind: 'endeavor',
+      board: { x: 2, y: 2, lane: 'endeavor' },
+      content: layered(
+        {
+          summaryBlocks: [textBlock('scene-monastery-summary-1', 'summary', 'Infiltrate the monastery using the calm route, the shadow route, or a risky improvisation.')],
+          gmBlocks: [textBlock('scene-monastery-gm-1', 'gm', 'Run this as a reusable endeavor. Keep the board visible and let the approaches do the heavy lifting.')],
+          hiddenTruthBlocks: [textBlock('scene-monastery-truth-1', 'truth', 'The archive chamber is less guarded than the cloister hall because the scribes trust silence more than steel.')],
+          noteBlocks: [textBlock('scene-monastery-note-1', 'note', 'A hard pivot from investigation into execution. Do not slow this down with menu-chasing.')],
+        },
+        [sourceRef('stonewalkers-gm-tools', 'Chapter 2 / Monastery Infiltration', 27, 'Obstacle flow for the monastery scene')],
+        {
+          blockOverrides: [
+            {
+              id: 'scene-monastery-gm-replace',
+              op: 'replace',
+              targetBlockId: 'scene-monastery-gm-1',
+              newText: 'Run this as a reusable endeavor. Keep the board live, use alert as a visible pressure track, and do not bury the players in sub-scenes.',
+            },
+          ],
+        },
+      ),
+      passiveHookIds: ['hook-monastery-passive'],
+      activeHookIds: ['hook-monastery-active'],
+      unlockWhen: [{ all: [{ scope: 'chapter.flag', key: 'contactMet', op: 'eq', value: true }] }],
+      endeavorId: 'endeavor-monastery-infiltration',
+      linkedNpcAppearanceIds: ['appearance-tava-monastery'],
+      linkedAdversaryTemplateIds: [],
+      linkedLocationIds: ['location-monastery'],
+      linkedRuleReferenceIds: ['rule-stealth-infiltration'],
+      outcomeIds: ['outcome-monastery-map', 'outcome-monastery-alarm'],
+      tags: ['endeavor'],
+      sourceRefs: [sourceRef('stonewalkers-gm-tools', 'Chapter 2 / Monastery Infiltration', 27, 'Monastery infiltration')],
+    },
+    {
+      ...baseRecord('scene-escape-report'),
+      campaignId,
+      chapterId,
+      key: 'c2-escape-report',
+      title: 'Escape And Report',
+      sceneKind: 'transition',
+      board: { x: 3, y: 3, lane: 'exit' },
+      content: layered(
+        {
+          summaryBlocks: [textBlock('scene-escape-summary-1', 'summary', 'Resolve the getaway, account for noise or injuries, and let the players choose what to do with the truth.')],
+          gmBlocks: [textBlock('scene-escape-gm-1', 'gm', 'This scene absorbs both the clean getaway and the messy alarmed route. Keep it short and consequential.')],
+          hiddenTruthBlocks: [textBlock('scene-escape-truth-1', 'truth', 'If the party leaves the ledger behind, the contact relationship suffers but the monastery stays quiet.')],
+          noteBlocks: [textBlock('scene-escape-note-1', 'note', 'Use as convergence, not another full mission.')],
+        },
+        [sourceRef('stonewalkers-adventure', 'Chapter 2 / Escape', 58, 'Escape or clean report scene')],
+      ),
+      passiveHookIds: ['hook-escape-passive'],
+      activeHookIds: ['hook-escape-active'],
+      unlockWhen: [
+        {
+          any: [
+            { scope: 'scene.status', key: 'scene-monastery-infiltration', op: 'eq', value: 'completed' },
+            { scope: 'scene.status', key: 'scene-monastery-infiltration', op: 'eq', value: 'skipped' },
+          ],
+        },
+      ],
+      encounterSetupId: 'encounter-escape-report',
+      linkedNpcAppearanceIds: ['appearance-lanor-contact'],
+      linkedAdversaryTemplateIds: [],
+      linkedLocationIds: ['location-warcamp', 'location-monastery'],
+      linkedRuleReferenceIds: ['rule-fast-turn'],
+      outcomeIds: ['outcome-escape-clean'],
+      tags: ['convergence'],
+      sourceRefs: [sourceRef('stonewalkers-adventure', 'Chapter 2 / Escape', 58, 'Escape report')],
+    },
+  ];
+
+  const campaign: Campaign = {
+    ...baseRecord(campaignId),
+    key: 'stonewalkers',
+    title: 'Stonewalkers',
+    content: layered(
+      {
+        summaryBlocks: [textBlock('campaign-summary-1', 'summary', 'A warcamp mystery that turns into a monastery operation.')],
+        gmNotes: [textBlock('campaign-gm-1', 'note', 'The operational view should privilege the rewritten GM version over the imported source.')],
+      },
+      [sourceRef('stonewalkers-adventure', 'Front Matter', 3, 'Stonewalkers campaign overview')],
+    ),
+    chapterOrder: [chapterId],
+    pcIds: ['pc-serah', 'pc-renn'],
+    npcIds: ['npc-amaram', 'npc-lanor', 'npc-tava'],
+    factionIds: [],
+    locationIds: ['location-warcamp', 'location-monastery'],
+    activeSessionRunId: sessionRunId,
+    currentChapterId: chapterId,
+    defaultRuleMode: 'assistive',
+  };
+
+  const chapter: Chapter = {
+    ...baseRecord(chapterId),
+    campaignId,
+    key: 'c2-splintered-warcamp',
+    title: 'Chapter 2: Splintered Warcamp',
+    order: 2,
+    content: layered(
+      {
+        summaryBlocks: [textBlock('chapter-summary-1', 'summary', 'Search the warcamp, find the contact, infiltrate the monastery, then converge on the escape.')],
+        gmNotes: [textBlock('chapter-gm-1', 'note', 'Do not make lead a universal mechanic. Keep progress local to this chapter.')],
+      },
+      [sourceRef('stonewalkers-adventure', 'Chapter 2', 42, 'Warcamp chapter structure')],
+    ),
+    sceneNodeIds: scenes.map((scene) => scene.id),
+    sceneEdgeIds: [
+      'edge-scout-contact',
+      'edge-quartermaster-contact',
+      'edge-infirmary-contact',
+      'edge-campfire-contact',
+      'edge-contact-monastery',
+      'edge-monastery-escape',
+      'edge-monastery-failure-escape',
+    ],
+    defaultStartSceneId: 'scene-field-infirmary',
+    requiredBeatSceneIds: ['scene-contact-meeting', 'scene-monastery-infiltration', 'scene-escape-report'],
+    stateSchema: {
+      flags: ['contactUnlocked', 'contactMet', 'monasteryInside', 'monasteryAlarmed'],
+      counters: ['warcampIntel', 'contactTrust'],
+      customKeys: ['borrowedSealState'],
+    },
+    rewardIds: ['reward-monastery-map', 'reward-cloister-ledger'],
+    favorIds: ['favor-borrowed-supply-pass', 'favor-scribe-seal', 'favor-contact-safehouse'],
+    sourceRefs: [sourceRef('stonewalkers-adventure', 'Chapter 2', 42, 'Bounded chapter sandbox')],
+  };
+
+  const sceneEdges: SceneEdge[] = [
+    {
+      ...baseRecord('edge-scout-contact'),
+      chapterId,
+      fromSceneId: 'scene-scout-lines',
+      toSceneId: 'scene-contact-meeting',
+      kind: 'unlock',
+      label: 'Enough clean patrol rhythm reveals the later contact.',
+      priority: 1,
+      when: { all: [{ scope: 'chapter.counter', key: 'warcampIntel', op: 'gte', value: 2 }] },
+    },
+    {
+      ...baseRecord('edge-quartermaster-contact'),
+      chapterId,
+      fromSceneId: 'scene-quartermaster-stores',
+      toSceneId: 'scene-contact-meeting',
+      kind: 'unlock',
+      label: 'The seal points toward the contact.',
+      priority: 2,
+    },
+    {
+      ...baseRecord('edge-infirmary-contact'),
+      chapterId,
+      fromSceneId: 'scene-field-infirmary',
+      toSceneId: 'scene-contact-meeting',
+      kind: 'unlock',
+      label: 'Witness testimony sharpens the question for the contact.',
+      priority: 3,
+    },
+    {
+      ...baseRecord('edge-campfire-contact'),
+      chapterId,
+      fromSceneId: 'scene-rival-campfire',
+      toSceneId: 'scene-contact-meeting',
+      kind: 'unlock',
+      label: 'Gossip can reach the same beat faster.',
+      priority: 4,
+    },
+    {
+      ...baseRecord('edge-contact-monastery'),
+      chapterId,
+      fromSceneId: 'scene-contact-meeting',
+      toSceneId: 'scene-monastery-infiltration',
+      kind: 'path',
+      label: 'The contact hands over the monastery route.',
+      priority: 5,
+    },
+    {
+      ...baseRecord('edge-monastery-escape'),
+      chapterId,
+      fromSceneId: 'scene-monastery-infiltration',
+      toSceneId: 'scene-escape-report',
+      kind: 'convergence',
+      label: 'Success still converges on the report scene.',
+      priority: 6,
+      when: { all: [{ scope: 'scene.status', key: 'scene-monastery-infiltration', op: 'eq', value: 'completed' }] },
+    },
+    {
+      ...baseRecord('edge-monastery-failure-escape'),
+      chapterId,
+      fromSceneId: 'scene-monastery-infiltration',
+      toSceneId: 'scene-escape-report',
+      kind: 'fallback',
+      label: 'A noisy failure still lands in the same convergence beat.',
+      priority: 7,
+      when: { all: [{ scope: 'scene.status', key: 'scene-monastery-infiltration', op: 'eq', value: 'skipped' }] },
+    },
+  ];
+
+  const hooks: Hook[] = [
+    {
+      ...baseRecord('hook-scout-lines-passive'),
+      chapterId,
+      sceneNodeId: 'scene-scout-lines',
+      mode: 'passive',
+      title: 'Runner debt',
+      prompt: 'Relis is more useful if the players offer help before questions.',
+      sourceRefs: [sourceRef('stonewalkers-gm-tools', 'Hooks / Scout Lines', 8, 'Debt softener')],
+    },
+    {
+      ...baseRecord('hook-scout-lines-active'),
+      chapterId,
+      sceneNodeId: 'scene-scout-lines',
+      mode: 'active',
+      title: 'Patrol rhythm',
+      prompt: 'Reveal the blind patrol window the moment the players earn a real favor.',
+      sourceRefs: [sourceRef('stonewalkers-gm-tools', 'Hooks / Scout Lines', 8, 'Blind patrol window')],
+    },
+    {
+      ...baseRecord('hook-infirmary-passive'),
+      chapterId,
+      sceneNodeId: 'scene-field-infirmary',
+      mode: 'passive',
+      title: 'Soft witness',
+      prompt: 'Sister Tava responds to care, not pressure.',
+      sourceRefs: [sourceRef('stonewalkers-gm-tools', 'Hooks / Infirmary', 9, 'Care over pressure')],
+    },
+    {
+      ...baseRecord('hook-infirmary-active'),
+      chapterId,
+      sceneNodeId: 'scene-field-infirmary',
+      mode: 'active',
+      title: 'Missing acolyte',
+      prompt: 'Use the hidden acolyte to pivot directly toward the contact.',
+      sourceRefs: [sourceRef('stonewalkers-gm-tools', 'Hooks / Infirmary', 9, 'Hidden acolyte')],
+    },
+    {
+      ...baseRecord('hook-contact-passive'),
+      chapterId,
+      sceneNodeId: 'scene-contact-meeting',
+      mode: 'passive',
+      title: 'Lanor tests certainty',
+      prompt: 'The contact offers one false detail first if the players posture too hard.',
+      sourceRefs: [sourceRef('stonewalkers-gm-tools', 'Hooks / Contact', 15, 'Test certainty')],
+    },
+    {
+      ...baseRecord('hook-contact-active'),
+      chapterId,
+      sceneNodeId: 'scene-contact-meeting',
+      mode: 'active',
+      title: 'Seal handoff',
+      prompt: 'Lanor grants either the scribe seal or the quiet route, not both, unless trust is high.',
+      sourceRefs: [sourceRef('stonewalkers-gm-tools', 'Hooks / Contact', 15, 'Seal handoff')],
+    },
+    {
+      ...baseRecord('hook-monastery-passive'),
+      chapterId,
+      sceneNodeId: 'scene-monastery-infiltration',
+      mode: 'passive',
+      title: 'Alert pressure',
+      prompt: 'Put the alert track where the GM can see it without opening another panel.',
+      sourceRefs: [sourceRef('stonewalkers-gm-tools', 'Hooks / Infiltration', 27, 'Visible alert track')],
+    },
+    {
+      ...baseRecord('hook-monastery-active'),
+      chapterId,
+      sceneNodeId: 'scene-monastery-infiltration',
+      mode: 'active',
+      title: 'Archive shortcut',
+      prompt: 'A quiet success at the outer gate can reveal a shorter route into the archive chamber.',
+      sourceRefs: [sourceRef('stonewalkers-gm-tools', 'Hooks / Infiltration', 27, 'Archive shortcut')],
+    },
+    {
+      ...baseRecord('hook-quartermaster-passive'),
+      chapterId,
+      sceneNodeId: 'scene-quartermaster-stores',
+      mode: 'passive',
+      title: 'Seal scent',
+      prompt: 'Players can notice the wax pattern before anyone explains it.',
+      sourceRefs: [sourceRef('stonewalkers-gm-tools', 'Hooks / Quartermaster', 11, 'Wax pattern')],
+    },
+    {
+      ...baseRecord('hook-quartermaster-active'),
+      chapterId,
+      sceneNodeId: 'scene-quartermaster-stores',
+      mode: 'active',
+      title: 'Borrow the pass',
+      prompt: 'Offer the supply pass as a clean reward for bold improvisation.',
+      sourceRefs: [sourceRef('stonewalkers-gm-tools', 'Hooks / Quartermaster', 11, 'Borrow the pass')],
+    },
+    {
+      ...baseRecord('hook-campfire-passive'),
+      chapterId,
+      sceneNodeId: 'scene-rival-campfire',
+      mode: 'passive',
+      title: 'Trade story for story',
+      prompt: 'The rivals trade useful truth only after the players share a real loss or rumor.',
+      sourceRefs: [sourceRef('stonewalkers-gm-tools', 'Hooks / Campfire', 18, 'Trade story')],
+    },
+    {
+      ...baseRecord('hook-campfire-active'),
+      chapterId,
+      sceneNodeId: 'scene-rival-campfire',
+      mode: 'active',
+      title: 'Commander’s shadow',
+      prompt: 'Let Amaram’s looming influence make the whole camp feel watched.',
+      sourceRefs: [sourceRef('stonewalkers-gm-tools', 'Hooks / Campfire', 18, 'Commander shadow')],
+    },
+    {
+      ...baseRecord('hook-escape-passive'),
+      chapterId,
+      sceneNodeId: 'scene-escape-report',
+      mode: 'passive',
+      title: 'Short convergence',
+      prompt: 'Once the players decide what to do with the ledger, end the chapter cleanly.',
+      sourceRefs: [sourceRef('stonewalkers-gm-tools', 'Hooks / Escape', 31, 'Short convergence')],
+    },
+    {
+      ...baseRecord('hook-escape-active'),
+      chapterId,
+      sceneNodeId: 'scene-escape-report',
+      mode: 'active',
+      title: 'Price of quiet',
+      prompt: 'If they preserve secrecy, show what they had to leave behind.',
+      sourceRefs: [sourceRef('stonewalkers-gm-tools', 'Hooks / Escape', 31, 'Price of quiet')],
+    },
+  ];
+
+  const conditions: Condition[] = [
+    {
+      ...baseRecord('condition-fatigued'),
+      key: 'fatigued',
+      name: 'Fatigued',
+      category: 'endeavor',
+      description: 'The target pushes too hard and loses a step on the next risky move.',
+      defaultDuration: { unit: 'scene' },
+      stackMode: 'refresh',
+      ruleReferenceIds: ['rule-stealth-infiltration'],
+    },
+    {
+      ...baseRecord('condition-suspicious'),
+      key: 'suspicious',
+      name: 'Suspicious',
+      category: 'social',
+      description: 'The target is wary and requires a stronger follow-up to gain trust.',
+      defaultDuration: { unit: 'scene' },
+      stackMode: 'replace',
+      ruleReferenceIds: ['rule-conversation-focus'],
+    },
+  ];
+
+  const outcomes: Outcome[] = [
+    {
+      ...baseRecord('outcome-scout-pattern'),
+      chapterId,
+      sceneNodeId: 'scene-scout-lines',
+      key: 'scout-pattern',
+      title: 'Patrol Rhythm Secured',
+      summary: 'The players learn the blind hand-off route.',
+      visibility: 'player-safe',
+      effects: [{ type: 'inc-counter', key: 'warcampIntel', value: 1 }],
+      sourceRefs: [sourceRef('stonewalkers-adventure', 'Chapter 2 / Scout Lines', 44, 'Patrol rhythm secured')],
+    },
+    {
+      ...baseRecord('outcome-quartermaster-pass'),
+      chapterId,
+      sceneNodeId: 'scene-quartermaster-stores',
+      key: 'quartermaster-pass',
+      title: 'Supply Pass Taken',
+      summary: 'The party can spend a pass to calm the outer gate.',
+      visibility: 'player-safe',
+      effects: [{ type: 'grant-favor', referenceId: 'favor-borrowed-supply-pass' }],
+      sourceRefs: [sourceRef('stonewalkers-gm-tools', 'Quartermaster Reward', 13, 'Supply pass reward')],
+    },
+    {
+      ...baseRecord('outcome-infirmary-rumor'),
+      chapterId,
+      sceneNodeId: 'scene-field-infirmary',
+      key: 'infirmary-rumor',
+      title: 'Wounded Witness',
+      summary: 'The players hear about monastery deliveries and vanishing acolytes.',
+      visibility: 'player-safe',
+      effects: [{ type: 'inc-counter', key: 'warcampIntel', value: 1 }],
+      sourceRefs: [sourceRef('stonewalkers-adventure', 'Chapter 2 / Infirmary', 49, 'Wounded witness')],
+    },
+    {
+      ...baseRecord('outcome-campfire-trust'),
+      chapterId,
+      sceneNodeId: 'scene-rival-campfire',
+      key: 'campfire-trust',
+      title: 'Campfire Leverage',
+      summary: 'The rivals give the party one rumor and a little street trust.',
+      visibility: 'player-safe',
+      effects: [{ type: 'set-counter', key: 'contactTrust', value: 1 }],
+      sourceRefs: [sourceRef('stonewalkers-gm-tools', 'Campfire Trust', 19, 'Campfire leverage')],
+    },
+    {
+      ...baseRecord('outcome-contact-trust'),
+      chapterId,
+      sceneNodeId: 'scene-contact-meeting',
+      key: 'contact-trust',
+      title: 'Lanor Commits',
+      summary: 'The contact reveals the monastery route and sets up the next beat.',
+      visibility: 'player-safe',
+      effects: [
+        { type: 'set-flag', key: 'contactMet', value: true },
+        { type: 'grant-favor', referenceId: 'favor-scribe-seal' },
+      ],
+      sourceRefs: [sourceRef('stonewalkers-adventure', 'Chapter 2 / Contact', 53, 'Lanor commits')],
+    },
+    {
+      ...baseRecord('outcome-monastery-map'),
+      chapterId,
+      sceneNodeId: 'scene-monastery-infiltration',
+      key: 'monastery-map',
+      title: 'Monastery Ledger Found',
+      summary: 'The players escape with the map and ledger.',
+      visibility: 'player-safe',
+      effects: [{ type: 'grant-reward', referenceId: 'reward-monastery-map' }],
+      sourceRefs: [sourceRef('stonewalkers-adventure', 'Chapter 2 / Monastery', 56, 'Ledger found')],
+    },
+    {
+      ...baseRecord('outcome-monastery-alarm'),
+      chapterId,
+      sceneNodeId: 'scene-monastery-infiltration',
+      key: 'monastery-alarm',
+      title: 'Monastery Alarmed',
+      summary: 'The quiet route is gone and the chapter exits hotter.',
+      visibility: 'player-safe',
+      effects: [{ type: 'set-flag', key: 'monasteryAlarmed', value: true }],
+      sourceRefs: [sourceRef('stonewalkers-gm-tools', 'Infiltration Failure', 29, 'Monastery alarmed')],
+    },
+    {
+      ...baseRecord('outcome-escape-clean'),
+      chapterId,
+      sceneNodeId: 'scene-escape-report',
+      key: 'escape-clean',
+      title: 'Truth Delivered',
+      summary: 'The players choose what to do with the evidence and leave the chapter with a clean state change.',
+      visibility: 'player-safe',
+      effects: [{ type: 'grant-reward', referenceId: 'reward-cloister-ledger' }],
+      sourceRefs: [sourceRef('stonewalkers-adventure', 'Chapter 2 / Escape', 59, 'Truth delivered')],
+    },
+  ];
+
+  const favors: Favor[] = [
+    {
+      ...baseRecord('favor-borrowed-supply-pass'),
+      chapterId,
+      label: 'Borrowed Supply Pass',
+      summary: 'Calms the outer gate or gets the party through one guarded threshold.',
+      maxUses: 1,
+      refreshPolicy: 'never',
+      spendEffects: [{ type: 'resource-delta', key: 'alert', value: -1 }],
+    },
+    {
+      ...baseRecord('favor-scribe-seal'),
+      chapterId,
+      sourceNpcId: 'npc-lanor',
+      label: 'Scribe Seal',
+      summary: 'A stronger monastery access token than the supply pass, good for the clean route.',
+      maxUses: 1,
+      refreshPolicy: 'never',
+      spendEffects: [{ type: 'resource-delta', key: 'alert', value: -2 }],
+    },
+    {
+      ...baseRecord('favor-contact-safehouse'),
+      chapterId,
+      sourceNpcId: 'npc-lanor',
+      label: 'Contact Safehouse',
+      summary: 'Lets the party cool the scene once after the chapter converges.',
+      maxUses: 1,
+      refreshPolicy: 'never',
+      spendEffects: [{ type: 'set-escalation', value: 0 }],
+    },
+  ];
+
+  const rewards: Reward[] = [
+    {
+      ...baseRecord('reward-monastery-map'),
+      chapterId,
+      sceneNodeId: 'scene-monastery-infiltration',
+      label: 'Monastery Map',
+      kind: 'intel',
+      summary: 'A structural sketch of the monastery and hidden service routes.',
+      effects: [{ type: 'set-flag', key: 'monasteryInside', value: true }],
+    },
+    {
+      ...baseRecord('reward-cloister-ledger'),
+      chapterId,
+      sceneNodeId: 'scene-escape-report',
+      label: 'Cloister Ledger',
+      kind: 'intel',
+      summary: 'The ledger that makes the next chapter politically dangerous.',
+      effects: [{ type: 'set-flag', key: 'contactMet', value: true }],
+    },
+  ];
+
+  const rules: RuleReference[] = [
+    {
+      ...baseRecord('rule-stealth-infiltration'),
+      key: 'stealth-infiltration',
+      title: 'Infiltration And Alert',
+      category: 'endeavor',
+      excerptBlocks: [textBlock('rule-stealth-excerpt-1', 'boxed', 'Quiet approaches advance progress while noisy failures push alert.')],
+      parsedTerms: ['stealth', 'infiltration', 'alert'],
+      sourceRefs: [sourceRef('stormlight-handbook', 'Structured Scenes / Infiltration', 128, 'Quiet vs alert track')],
+      formalizationStatus: 'candidate',
+    },
+    {
+      ...baseRecord('rule-conversation-focus'),
+      key: 'conversation-focus',
+      title: 'Conversation Order And Focus',
+      category: 'conversation',
+      excerptBlocks: [textBlock('rule-conversation-excerpt-1', 'boxed', 'Focus shifts when one side yields leverage or evidence.')],
+      parsedTerms: ['conversation', 'focus'],
+      sourceRefs: [sourceRef('stormlight-handbook', 'Conversations / Focus', 84, 'Focus shifts on leverage')],
+      formalizationStatus: 'candidate',
+    },
+    {
+      ...baseRecord('rule-fast-turn'),
+      key: 'fast-turn',
+      title: 'Fast Turn',
+      category: 'combat',
+      excerptBlocks: [textBlock('rule-fast-excerpt-1', 'boxed', 'Fast turns trade power for tempo and positioning.')],
+      parsedTerms: ['combat', 'fast turn'],
+      sourceRefs: [sourceRef('stormlight-handbook', 'Combat / Turn Flow', 32, 'Fast turn rule')],
+      formalizationStatus: 'candidate',
+    },
+  ];
+
+  const endeavors: Endeavor[] = [
+    {
+      ...baseRecord('endeavor-monastery-infiltration'),
+      chapterId,
+      sceneNodeId: 'scene-monastery-infiltration',
+      key: 'monastery-infiltration',
+      title: 'Monastery Infiltration',
+      kind: 'infiltration',
+      structure: 'hybrid',
+      objective: 'Reach the archive chamber before alert hits four.',
+      content: layered(
+        {
+          gmGuidance: [textBlock('endeavor-monastery-guidance-1', 'gm', 'Keep the obstacle cards short and the pressure visible.')],
+          playerSummary: [textBlock('endeavor-monastery-player-1', 'summary', 'Get in, find the ledger, get out before the bells start.')],
+        },
+        [sourceRef('stonewalkers-gm-tools', 'Monastery Infiltration Engine', 27, 'Reusable infiltration engine')],
+      ),
+      obstacleIds: ['obstacle-outer-gate', 'obstacle-inner-cloister', 'obstacle-archive-chamber'],
+      tracks: [
+        { id: 'track-infiltration-progress', key: 'infiltrationProgress', label: 'Progress', min: 0, max: 6, successAt: 6 },
+        { id: 'track-monastery-alert', key: 'monasteryAlert', label: 'Alert', min: 0, max: 4, failureAt: 4 },
+      ],
+      successWhen: { all: [{ scope: 'custom', key: 'infiltrationProgress', op: 'gte', value: 6 }] },
+      failureWhen: { all: [{ scope: 'custom', key: 'monasteryAlert', op: 'gte', value: 4 }] },
+      consequenceOutcomeIds: ['outcome-monastery-map', 'outcome-monastery-alarm'],
+      linkedRuleReferenceIds: ['rule-stealth-infiltration'],
+    },
+  ];
+
+  const obstacles: Obstacle[] = [
+    {
+      ...baseRecord('obstacle-outer-gate'),
+      endeavorId: 'endeavor-monastery-infiltration',
+      key: 'outer-gate',
+      title: 'Outer Gate',
+      order: 1,
+      required: true,
+      summary: 'Get the party through the first gate without waking the whole cloister.',
+      approaches: [
+        {
+          id: 'approach-outer-gate-papers',
+          label: 'Borrowed papers',
+          description: 'Spend the borrowed pass or scribe seal to look official.',
+          suggestedActionKeys: ['present-pass', 'deception'],
+          linkedRuleReferenceIds: ['rule-stealth-infiltration'],
+          onSuccess: [{ type: 'resource-delta', key: 'infiltrationProgress', value: 2 }],
+          onFailure: [{ type: 'resource-delta', key: 'monasteryAlert', value: 1 }],
+        },
+        {
+          id: 'approach-outer-gate-shadow',
+          label: 'Shadowed wall',
+          description: 'Take the climbing route and accept the risk of strain.',
+          suggestedActionKeys: ['stealth', 'athletics'],
+          linkedRuleReferenceIds: ['rule-stealth-infiltration'],
+          onSuccess: [{ type: 'resource-delta', key: 'infiltrationProgress', value: 1 }],
+          onMixed: [
+            { type: 'resource-delta', key: 'infiltrationProgress', value: 1 },
+            { type: 'apply-condition', referenceId: 'condition-fatigued' },
+          ],
+          onFailure: [
+            { type: 'resource-delta', key: 'monasteryAlert', value: 1 },
+            { type: 'apply-condition', referenceId: 'condition-fatigued' },
+          ],
+        },
+      ],
+    },
+    {
+      ...baseRecord('obstacle-inner-cloister'),
+      endeavorId: 'endeavor-monastery-infiltration',
+      key: 'inner-cloister',
+      title: 'Inner Cloister',
+      order: 2,
+      required: false,
+      summary: 'Move through the cloister without losing the rhythm.',
+      approaches: [
+        {
+          id: 'approach-cloister-blend',
+          label: 'Blend with novices',
+          description: 'Adopt the monastery pace and let the scene breathe.',
+          suggestedActionKeys: ['deception', 'performance'],
+          linkedRuleReferenceIds: ['rule-conversation-focus'],
+          onSuccess: [{ type: 'resource-delta', key: 'infiltrationProgress', value: 2 }],
+          onFailure: [{ type: 'resource-delta', key: 'monasteryAlert', value: 1 }],
+        },
+        {
+          id: 'approach-cloister-diversion',
+          label: 'Stage diversion',
+          description: 'Create a clean distraction to peel guards away.',
+          suggestedActionKeys: ['support', 'maneuver'],
+          linkedRuleReferenceIds: ['rule-stealth-infiltration'],
+          onSuccess: [{ type: 'resource-delta', key: 'infiltrationProgress', value: 1 }],
+          onMixed: [{ type: 'resource-delta', key: 'monasteryAlert', value: 1 }],
+          onFailure: [{ type: 'resource-delta', key: 'monasteryAlert', value: 2 }],
+        },
+      ],
+    },
+    {
+      ...baseRecord('obstacle-archive-chamber'),
+      endeavorId: 'endeavor-monastery-infiltration',
+      key: 'archive-chamber',
+      title: 'Archive Chamber',
+      order: 3,
+      required: true,
+      summary: 'Take the ledger and decide what proof is worth the noise.',
+      approaches: [
+        {
+          id: 'approach-archive-quick',
+          label: 'Quick grab',
+          description: 'Take the ledger and run.',
+          suggestedActionKeys: ['stealth', 'react'],
+          linkedRuleReferenceIds: ['rule-stealth-infiltration'],
+          onSuccess: [{ type: 'resource-delta', key: 'infiltrationProgress', value: 3 }],
+          onFailure: [{ type: 'resource-delta', key: 'monasteryAlert', value: 2 }],
+        },
+        {
+          id: 'approach-archive-careful',
+          label: 'Careful study',
+          description: 'Take longer but leave with cleaner information.',
+          suggestedActionKeys: ['study', 'focus'],
+          linkedRuleReferenceIds: ['rule-conversation-focus'],
+          onSuccess: [{ type: 'resource-delta', key: 'infiltrationProgress', value: 2 }],
+          onMixed: [{ type: 'resource-delta', key: 'monasteryAlert', value: 1 }],
+          onFailure: [{ type: 'resource-delta', key: 'monasteryAlert', value: 2 }],
+        },
+      ],
+    },
+  ];
+
+  const encounters: EncounterSetup[] = [
+    {
+      ...baseRecord('encounter-escape-report'),
+      chapterId,
+      sceneNodeId: 'scene-escape-report',
+      title: 'Alarmed Escape',
+      objective: 'Get clear without losing the ledger.',
+      environmentNotes: ['Tight monastery stairs', 'Torchlight chokepoints'],
+      participantSlots: [],
+      rewardIds: ['reward-cloister-ledger'],
+      linkedRuleReferenceIds: ['rule-fast-turn'],
+    },
+  ];
+
+  const npcs: NPC[] = [
+    {
+      ...baseRecord('npc-amaram'),
+      campaignId,
+      key: 'amaram',
+      canonicalName: 'Amaram',
+      aliases: ['Brightlord Amaram'],
+      factionIds: [],
+      content: layered(
+        {
+          canonicalSummary: [textBlock('npc-amaram-summary-1', 'summary', 'A looming commander whose network keeps everyone a little afraid.')],
+          privateTruth: [textBlock('npc-amaram-truth-1', 'truth', 'He barely appears in chapter two, but his pressure shapes almost every choice.')],
+          portrayalDefaults: [textBlock('npc-amaram-portrayal-1', 'gm', 'Present him as gravity more than presence.')],
+        },
+        [sourceRef('stonewalkers-adventure', 'NPCs / Amaram', 70, 'Commander shadow')],
+      ),
+      campaignState: {
+        statusTags: ['looming'],
+        resources: { influence: 9 },
+        relationshipByPcId: {},
+        historyEventIds: [],
+      },
+    },
+    {
+      ...baseRecord('npc-lanor'),
+      campaignId,
+      key: 'lanor',
+      canonicalName: 'Lanor',
+      aliases: ['The Contact'],
+      factionIds: [],
+      content: layered(
+        {
+          canonicalSummary: [textBlock('npc-lanor-summary-1', 'summary', 'A quiet broker who survives by staying useful to whichever side is least dangerous today.')],
+          privateTruth: [textBlock('npc-lanor-truth-1', 'truth', 'Lanor wants out more than revenge.')],
+          portrayalDefaults: [textBlock('npc-lanor-portrayal-1', 'gm', 'Keep Lanor composed until the players say the wrong name.')],
+        },
+        [sourceRef('stonewalkers-adventure', 'NPCs / Lanor', 72, 'Quiet broker')],
+      ),
+      campaignState: {
+        statusTags: ['contact'],
+        resources: { trust: 1, focus: 4 },
+        relationshipByPcId: {
+          'pc-serah': { trust: 1, notes: 'Serah has the most patience for him.' },
+        },
+        historyEventIds: [],
+      },
+    },
+    {
+      ...baseRecord('npc-tava'),
+      campaignId,
+      key: 'sister-tava',
+      canonicalName: 'Sister Tava',
+      aliases: [],
+      factionIds: [],
+      content: layered(
+        {
+          canonicalSummary: [textBlock('npc-tava-summary-1', 'summary', 'A field healer who keeps seeing too much and saying too little.')],
+          privateTruth: [textBlock('npc-tava-truth-1', 'truth', 'She already hid one acolyte and fears being discovered.')],
+          portrayalDefaults: [textBlock('npc-tava-portrayal-1', 'gm', 'Speak softly, but do not make her passive.')],
+        },
+        [sourceRef('stonewalkers-adventure', 'NPCs / Sister Tava', 73, 'Field healer witness')],
+      ),
+      campaignState: {
+        statusTags: ['witness'],
+        resources: { composure: 5 },
+        relationshipByPcId: {},
+        historyEventIds: [],
+      },
+    },
+  ];
+
+  const npcAppearances: NPCAppearance[] = [
+    {
+      ...baseRecord('appearance-amaram-shadow'),
+      npcId: 'npc-amaram',
+      chapterId,
+      roleIds: [],
+      aliasInScene: 'Amaram’s shadow',
+      stance: 'guarded',
+      localGoal: 'Keep the camp obedient without ever seeming present.',
+      localSecrets: [textBlock('appearance-amaram-secret-1', 'truth', 'Lanor fears this shadow more than the monastery itself.')],
+      portrayalOverride: [textBlock('appearance-amaram-portrayal-1', 'gm', 'Use hearsay, glances, and lowered voices instead of a physical entrance.')],
+      notes: [textBlock('appearance-amaram-note-1', 'note', 'He should feel omnipresent without becoming a scene-stealer.')],
+    },
+    {
+      ...baseRecord('appearance-lanor-scout-lines'),
+      npcId: 'npc-lanor',
+      chapterId,
+      sceneNodeId: 'scene-scout-lines',
+      roleIds: [],
+      stance: 'curious',
+      localGoal: 'See who is worth trusting before he exposes himself.',
+      localSecrets: [],
+      portrayalOverride: [textBlock('appearance-lanor-scout-1', 'gm', 'Lanor is only an implication here, not a full meeting.')],
+      notes: [],
+    },
+    {
+      ...baseRecord('appearance-lanor-quartermaster'),
+      npcId: 'npc-lanor',
+      chapterId,
+      sceneNodeId: 'scene-quartermaster-stores',
+      roleIds: [],
+      stance: 'guarded',
+      localGoal: 'See whether the players can acquire the seal cleanly.',
+      localSecrets: [],
+      portrayalOverride: [],
+      notes: [],
+    },
+    {
+      ...baseRecord('appearance-lanor-contact'),
+      npcId: 'npc-lanor',
+      chapterId,
+      sceneNodeId: 'scene-contact-meeting',
+      roleIds: [],
+      stance: 'guarded',
+      localGoal: 'Trade the monastery route for proof the players are worth the risk.',
+      localSecrets: [textBlock('appearance-lanor-contact-secret-1', 'truth', 'Lanor already prepared a fallback safehouse.')],
+      portrayalOverride: [textBlock('appearance-lanor-contact-portrayal-1', 'gm', 'He watches hands and exits more than faces.')],
+      notes: [textBlock('appearance-lanor-contact-note-1', 'note', 'Best scene to set up the scribe seal favor.')],
+    },
+    {
+      ...baseRecord('appearance-tava-infirmary'),
+      npcId: 'npc-tava',
+      chapterId,
+      sceneNodeId: 'scene-field-infirmary',
+      roleIds: [],
+      stance: 'neutral',
+      localGoal: 'Keep the wounded safe and decide whether the party can be trusted.',
+      localSecrets: [textBlock('appearance-tava-secret-1', 'truth', 'She already hid a fleeing novice.')],
+      portrayalOverride: [textBlock('appearance-tava-portrayal-1', 'gm', 'She is exhausted, not meek.')],
+      notes: [textBlock('appearance-tava-note-1', 'note', 'A strong link between the emotional and investigative layers.')],
+    },
+    {
+      ...baseRecord('appearance-tava-monastery'),
+      npcId: 'npc-tava',
+      chapterId,
+      sceneNodeId: 'scene-monastery-infiltration',
+      roleIds: [],
+      stance: 'supportive',
+      localGoal: 'Keep the acolyte hidden and prevent needless bloodshed.',
+      localSecrets: [],
+      portrayalOverride: [],
+      notes: [],
+    },
+  ];
+
+  const pcs: PC[] = [
+    {
+      ...baseRecord('pc-serah'),
+      campaignId,
+      playerName: 'Mira',
+      characterName: 'Serah',
+      factionIds: [],
+      resources: { health: 12, focus: 5, investiture: 2 },
+      conditionIds: [],
+      campaignNotes: [textBlock('pc-serah-note-1', 'note', 'Usually handles the quiet social approach.')],
+      historyEventIds: [],
+    },
+    {
+      ...baseRecord('pc-renn'),
+      campaignId,
+      playerName: 'Jace',
+      characterName: 'Renn',
+      factionIds: [],
+      resources: { health: 14, focus: 4, investiture: 1 },
+      conditionIds: [],
+      campaignNotes: [textBlock('pc-renn-note-1', 'note', 'Tends to turn plans into forward motion quickly.')],
+      historyEventIds: [],
+    },
+  ];
+
+  const locations: Location[] = [
+    {
+      ...baseRecord('location-warcamp'),
+      campaignId,
+      key: 'warcamp',
+      name: 'Warcamp',
+      kind: 'site',
+      content: layered(
+        {
+          publicSummary: [textBlock('location-warcamp-summary-1', 'summary', 'A strained warcamp full of debt, rumor, and watchful authority.')],
+          gmTruth: [textBlock('location-warcamp-truth-1', 'truth', 'Every search scene should feel like it belongs to one pressure-cooker ecosystem.')],
+        },
+        [sourceRef('stonewalkers-adventure', 'Locations / Warcamp', 40, 'Warcamp overview')],
+      ),
+      tags: ['camp', 'chapter-2'],
+    },
+    {
+      ...baseRecord('location-monastery'),
+      campaignId,
+      key: 'monastery',
+      name: 'The Monastery',
+      kind: 'site',
+      content: layered(
+        {
+          publicSummary: [textBlock('location-monastery-summary-1', 'summary', 'A quiet monastery whose calm hides ledgers, routes, and pressure points.')],
+          gmTruth: [textBlock('location-monastery-truth-1', 'truth', 'The archive is safer than the cloister because the scribes trust silence.')],
+        },
+        [sourceRef('stonewalkers-adventure', 'Locations / Monastery', 55, 'Monastery overview')],
+      ),
+      tags: ['monastery', 'chapter-2'],
+    },
+  ];
+
+  const chapterState: ChapterState = {
+    ...baseRecord(`chapter-state-${chapterId}`),
+    sessionRunId,
+    chapterId,
+    activeSceneId: 'scene-field-infirmary',
+    flags: {
+      contactUnlocked: false,
+      contactMet: false,
+      monasteryInside: false,
+      monasteryAlarmed: false,
+    },
+    counters: {
+      warcampIntel: 1,
+      contactTrust: 0,
+    },
+    escalation: 0,
+    favorUsesById: {},
+    custom: {
+      borrowedSealState: 'unclaimed',
+      infiltrationProgress: 0,
+      monasteryAlert: 0,
+    },
+    unlockedSceneIds: [...searchSceneIds],
+    completedSceneIds: ['scene-scout-lines'],
+    skippedSceneIds: [],
+    rewardIds: [],
+  };
+
+  const sessionRun: SessionRun = {
+    ...baseRecord(sessionRunId),
+    campaignId,
+    label: 'Chapter 2 Live Prep',
+    startedAt: timestamp,
+    currentChapterId: chapterId,
+    activeSceneId: 'scene-field-infirmary',
+    chapterStateIds: [chapterState.id],
+    combatIds: [],
+    quickNotes: [
+      textBlock('quick-note-1', 'note', 'Keep the warcamp scenes fast. The table wants momentum more than exhaustive searching.'),
+      textBlock('quick-note-2', 'note', 'If Serah leans gentle, reward it at the infirmary.'),
+    ],
+    ruleMode: 'assistive',
+  };
+
+  const sceneStates: SceneState[] = [
+    {
+      ...baseRecord('scene-state-scout-lines'),
+      sessionRunId,
+      chapterId,
+      sceneNodeId: 'scene-scout-lines',
+      status: 'completed',
+      activatedAt: timestamp,
+      completedAt: timestamp,
+      localNotes: ['Relis gave up the patrol rhythm after the party covered his debt.'],
+      chosenOutcomeIds: ['outcome-scout-pattern'],
+      runtimeFlags: {},
+      custom: {},
+    },
+    {
+      ...baseRecord('scene-state-quartermaster'),
+      sessionRunId,
+      chapterId,
+      sceneNodeId: 'scene-quartermaster-stores',
+      status: 'available',
+      localNotes: [],
+      chosenOutcomeIds: [],
+      runtimeFlags: {},
+      custom: {},
+    },
+    {
+      ...baseRecord('scene-state-infirmary'),
+      sessionRunId,
+      chapterId,
+      sceneNodeId: 'scene-field-infirmary',
+      status: 'active',
+      activatedAt: timestamp,
+      localNotes: ['Tava is close to opening up, but only if Renn stops pressing.'],
+      chosenOutcomeIds: [],
+      runtimeFlags: {},
+      custom: {},
+    },
+    {
+      ...baseRecord('scene-state-campfire'),
+      sessionRunId,
+      chapterId,
+      sceneNodeId: 'scene-rival-campfire',
+      status: 'available',
+      localNotes: [],
+      chosenOutcomeIds: [],
+      runtimeFlags: {},
+      custom: {},
+    },
+    {
+      ...baseRecord('scene-state-contact'),
+      sessionRunId,
+      chapterId,
+      sceneNodeId: 'scene-contact-meeting',
+      status: 'locked',
+      localNotes: [],
+      chosenOutcomeIds: [],
+      runtimeFlags: {},
+      custom: {},
+    },
+    {
+      ...baseRecord('scene-state-monastery'),
+      sessionRunId,
+      chapterId,
+      sceneNodeId: 'scene-monastery-infiltration',
+      status: 'locked',
+      localNotes: [],
+      chosenOutcomeIds: [],
+      runtimeFlags: {},
+      custom: {},
+    },
+    {
+      ...baseRecord('scene-state-escape'),
+      sessionRunId,
+      chapterId,
+      sceneNodeId: 'scene-escape-report',
+      status: 'locked',
+      localNotes: [],
+      chosenOutcomeIds: [],
+      runtimeFlags: {},
+      custom: {},
+    },
+  ];
+
+  const events: EventLogEntry[] = [
+    {
+      id: 'event-scene-scout-completed',
+      sessionRunId,
+      occurredAt: timestamp,
+      kind: 'scene.completed',
+      chapterId,
+      sceneNodeId: 'scene-scout-lines',
+      actor: { kind: 'scene', id: 'scene-scout-lines' },
+      payload: { note: 'Patrol rhythm secured.' },
+    },
+    {
+      id: 'event-warcamp-intel',
+      sessionRunId,
+      occurredAt: timestamp,
+      kind: 'chapter.counter.changed',
+      chapterId,
+      payload: { key: 'warcampIntel', delta: 1, next: 1 },
+    },
+    {
+      id: 'event-scene-infirmary-active',
+      sessionRunId,
+      occurredAt: timestamp,
+      kind: 'scene.activated',
+      chapterId,
+      sceneNodeId: 'scene-field-infirmary',
+      actor: { kind: 'scene', id: 'scene-field-infirmary' },
+      payload: { note: 'Infirmary opened as the active scene.' },
+    },
+    {
+      id: 'event-note-captured',
+      sessionRunId,
+      occurredAt: timestamp,
+      kind: 'note.captured',
+      chapterId,
+      sceneNodeId: 'scene-field-infirmary',
+      actor: { kind: 'pc', id: 'pc-serah' },
+      payload: { text: 'Tava responds better to gentleness than pressure.' },
+    },
+    {
+      id: 'event-resource-focus',
+      sessionRunId,
+      occurredAt: timestamp,
+      kind: 'resource.changed',
+      chapterId,
+      sceneNodeId: 'scene-field-infirmary',
+      actor: { kind: 'pc', id: 'pc-serah' },
+      payload: { entityKind: 'pc', entityId: 'pc-serah', resourceKey: 'focus', delta: -1, note: 'Soft probing' },
+    },
+    {
+      id: 'event-condition-suspicious',
+      sessionRunId,
+      occurredAt: timestamp,
+      kind: 'condition.applied',
+      chapterId,
+      sceneNodeId: 'scene-field-infirmary',
+      actor: { kind: 'npc', id: 'npc-tava' },
+      payload: { entityKind: 'npc', entityId: 'npc-tava', conditionId: 'condition-suspicious' },
+    },
+  ];
+
+  const diceRolls: DiceRoll[] = [
+    {
+      ...baseRecord('roll-infirmary-empathy'),
+      sessionRunId,
+      sceneNodeId: 'scene-field-infirmary',
+      actor: { kind: 'pc', id: 'pc-serah' },
+      target: { kind: 'npc', id: 'npc-tava' },
+      formula: '1d20+5',
+      rawDice: [16],
+      modifier: 5,
+      total: 21,
+      outcome: 'success',
+      tags: ['conversation', 'empathy'],
+      note: 'Serah de-escalated the scene with Tava.',
+    },
+  ];
+
+  return {
+    campaigns: [campaign],
+    chapters: [chapter],
+    chapterStates: [chapterState],
+    sessionRuns: [sessionRun],
+    sceneNodes: scenes,
+    sceneEdges,
+    sceneStates,
+    hooks,
+    conditions,
+    outcomes,
+    endeavors,
+    obstacles,
+    encounters,
+    npcs,
+    npcAppearances,
+    pcs,
+    locations,
+    rules,
+    rewards,
+    favors,
+    events,
+    diceRolls,
+  };
+}

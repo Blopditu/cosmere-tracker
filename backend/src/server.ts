@@ -2,6 +2,7 @@ import cors from 'cors';
 import express from 'express';
 import path from 'node:path';
 import { HttpError } from './lib/http';
+import { openSqliteDatabase, SqliteJsonRepository } from './lib/sqlite';
 import { SessionRepository } from './repositories/session.repository';
 import { RollRepository } from './repositories/roll.repository';
 import { CombatRepository } from './repositories/combat.repository';
@@ -13,17 +14,44 @@ import { RollService } from './services/roll.service';
 import { SessionService } from './services/session.service';
 import { CombatService } from './services/combat.service';
 import { StageService } from './services/stage.service';
+import { CampaignConsoleService } from './services/campaign-console.service';
 import { SessionController } from './controllers/session.controller';
 import { RollController } from './controllers/roll.controller';
 import { CombatController } from './controllers/combat.controller';
 import { StageController } from './controllers/stage.controller';
 import { BackupController } from './controllers/backup.controller';
+import { CampaignConsoleController } from './controllers/campaign-console.controller';
 import { createSessionRouter } from './routes/session.routes';
 import { createRollRouter } from './routes/roll.routes';
 import { createCombatRouter } from './routes/combat.routes';
 import { createStageRouter } from './routes/stage.routes';
 import { createUploadRouter } from './routes/upload.routes';
 import { createBackupRouter } from './routes/backup.routes';
+import { createCampaignRouter } from './routes/campaign.routes';
+import {
+  Campaign,
+  Chapter,
+  ChapterState,
+  Condition,
+  DiceRoll,
+  EncounterSetup,
+  Endeavor,
+  EventLogEntry,
+  Favor,
+  Hook,
+  Location,
+  NPC,
+  NPCAppearance,
+  Obstacle,
+  Outcome,
+  PC,
+  Reward,
+  RuleReference,
+  SceneEdge,
+  SceneNode,
+  SceneState,
+  SessionRun,
+} from '@shared/domain';
 
 const rootDir = path.resolve(__dirname, '..');
 const dataDir = path.join(rootDir, 'data');
@@ -42,6 +70,7 @@ const rollRepository = new RollRepository(dataDir);
 const combatRepository = new CombatRepository(dataDir);
 const stageSceneRepository = new StageSceneRepository(dataDir);
 const liveStageRepository = new LiveStageRepository(dataDir);
+const campaignDatabase = openSqliteDatabase(path.join(dataDir, 'cosmere-tracker.sqlite'));
 
 const rollService = new RollService(rollRepository);
 const sessionService = new SessionService(
@@ -55,11 +84,36 @@ const sessionService = new SessionService(
 );
 const combatService = new CombatService(combatRepository, sessionRepository, rollService);
 const stageService = new StageService(stageSceneRepository, liveStageRepository);
+const campaignConsoleService = new CampaignConsoleService({
+  campaigns: new SqliteJsonRepository<Campaign>(campaignDatabase, 'campaigns'),
+  chapters: new SqliteJsonRepository<Chapter>(campaignDatabase, 'chapters'),
+  chapterStates: new SqliteJsonRepository<ChapterState>(campaignDatabase, 'chapter_states'),
+  sessionRuns: new SqliteJsonRepository<SessionRun>(campaignDatabase, 'session_runs'),
+  sceneNodes: new SqliteJsonRepository<SceneNode>(campaignDatabase, 'scene_nodes'),
+  sceneEdges: new SqliteJsonRepository<SceneEdge>(campaignDatabase, 'scene_edges'),
+  sceneStates: new SqliteJsonRepository<SceneState>(campaignDatabase, 'scene_states'),
+  hooks: new SqliteJsonRepository<Hook>(campaignDatabase, 'hooks'),
+  conditions: new SqliteJsonRepository<Condition>(campaignDatabase, 'conditions'),
+  outcomes: new SqliteJsonRepository<Outcome>(campaignDatabase, 'outcomes'),
+  endeavors: new SqliteJsonRepository<Endeavor>(campaignDatabase, 'endeavors'),
+  obstacles: new SqliteJsonRepository<Obstacle>(campaignDatabase, 'obstacles'),
+  encounters: new SqliteJsonRepository<EncounterSetup>(campaignDatabase, 'encounters'),
+  npcs: new SqliteJsonRepository<NPC>(campaignDatabase, 'npcs'),
+  npcAppearances: new SqliteJsonRepository<NPCAppearance>(campaignDatabase, 'npc_appearances'),
+  pcs: new SqliteJsonRepository<PC>(campaignDatabase, 'pcs'),
+  locations: new SqliteJsonRepository<Location>(campaignDatabase, 'locations'),
+  rules: new SqliteJsonRepository<RuleReference>(campaignDatabase, 'rules'),
+  rewards: new SqliteJsonRepository<Reward>(campaignDatabase, 'rewards'),
+  favors: new SqliteJsonRepository<Favor>(campaignDatabase, 'favors'),
+  events: new SqliteJsonRepository<EventLogEntry>(campaignDatabase, 'events'),
+  diceRolls: new SqliteJsonRepository<DiceRoll>(campaignDatabase, 'dice_rolls'),
+});
 
 app.use('/api/sessions', createSessionRouter(new SessionController(sessionService)));
 app.use('/api', createRollRouter(new RollController(rollService)));
 app.use('/api', createCombatRouter(new CombatController(combatService)));
 app.use('/api', createStageRouter(new StageController(stageService)));
+app.use('/api', createCampaignRouter(new CampaignConsoleController(campaignConsoleService)));
 app.use('/api/backup', createBackupRouter(new BackupController(sessionService)));
 app.use('/api/uploads', createUploadRouter(uploadsDir));
 

@@ -95,6 +95,10 @@ import { AppRuntimeService } from './app-runtime.service';
             <app-roshar-icon key="stage" label="Stage manager" tone="emerald" [size]="18" />
             <span>Stage</span>
           </a>
+          <a [routerLink]="warRoomRoute" routerLinkActive="active">
+            <app-roshar-icon key="chronicle" label="War room" tone="topaz" [size]="18" />
+            <span>War Room</span>
+          </a>
         </aside>
 
         <main class="shell-content war-content">
@@ -127,6 +131,7 @@ export class ShellLayoutComponent {
   readonly stageRoute = computed(() =>
     this.currentSessionId() ? ['/gm/stage-manager', this.currentSessionId()] : ['/sessions'],
   );
+  readonly warRoomRoute = ['/gm/campaigns', 'stonewalkers-campaign'];
 
   constructor() {
     const syncRoute = () => {

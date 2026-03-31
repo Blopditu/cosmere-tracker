@@ -10,6 +10,7 @@ import { CombatTrackerPageComponent } from './features/combat-tracker/combat-tra
 import { PostCombatStatsPageComponent } from './features/post-combat-stats/post-combat-stats-page.component';
 import { StageManagerPageComponent } from './features/stage-manager/stage-manager-page.component';
 import { PlayerDisplayPageComponent } from './features/stage-manager/player-display-page.component';
+import { CampaignConsolePageComponent } from './features/campaign-console/campaign-console-page.component';
 
 export const routes: Routes = [
   {
@@ -60,6 +61,10 @@ export const routes: Routes = [
       {
         path: 'gm/stage-manager/:sessionId',
         component: StageManagerPageComponent,
+      },
+      {
+        path: 'gm/campaigns/:campaignId',
+        component: CampaignConsolePageComponent,
       },
     ],
   },
