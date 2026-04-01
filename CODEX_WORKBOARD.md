@@ -19,6 +19,22 @@ This file is the running tracker for work done with Codex. Keep it current so fu
 3. When a task is finished, mark it `[x]` and add a short result note.
 4. Keep "Redo / Revisit" separate from brand-new features so cleanup work stays visible.
 
+## Product Direction
+
+- Personal GM tool first, not a generic platform.
+- Local-first performance and fast table use matter more than cloud complexity.
+- In-person table play comes before remote-first virtual tabletop features.
+- No permanent Obsidian companion; important workflows should land in this app over time.
+- Model the campaign as entities plus event log plus derived state.
+- Capture real history now; defer replay-heavy simulation until the foundation is stable.
+
+## Product Pillars
+
+- `Session Control`: Stage manager, combat flow, rolls, prep tools, and player display.
+- `War Room`: NPCs, locations, chapters, events, relationships, and campaign truth.
+- `Atlas`: Roshar map, pinned places, linked entities, and place-driven navigation.
+- `Codex`: Handbook import, structured rules, rule lookup, and rules-aware support.
+
 ## Current Product Surface
 
 - `[x]` Session list and session dashboard
@@ -30,105 +46,128 @@ This file is the running tracker for work done with Codex. Keep it current so fu
 - `[~]` Handbook import review flow at `/gm/import/review`
 - `[~]` Python handbook extraction tool in `tools/handbook_import/`
 
-## Active Workstreams
+## Phase Roadmap
 
-- `[~]` Handbook import pipeline
+- `[~]` Phase 1: Session Ops Refresh
   Notes:
-  Tooling lives in `tools/handbook_import/`
-  Current workflow is documented in `tools/handbook_import/README.md`
-  Main output is deterministic import artifacts for handbook review and publishing
+  Focus on in-person GM flow and reducing setup friction before and during a session.
+  Keep this phase separate from deeper War Room modeling.
+  Task cluster:
+  Combat prep and setup improvements
+  Reusable stages across sessions
+  Reusable prep assets across sessions
+  Player-safe notes and reveal flow for table use
+  Custom-first NPC and enemy authoring where it directly improves session prep
 
-- `[~]` Import review desk
+- `[>]` Phase 2: Core Persistence Migration to SQLite
   Notes:
-  Route: `/gm/import/review`
-  Frontend: `src/app/features/campaign-import/`
-  Backend wiring: `backend/src/services/import-artifact.service.ts`
-  Goal is to register artifacts, review extracted candidates, edit payloads, and publish rules safely
+  Move remaining JSON-backed live-play and core data toward SQLite without overdesigning the schema.
+  Preserve local-first behavior and current upload flows while making identifiers and links more durable.
+  Task cluster:
+  Migrate remaining JSON-backed core domains toward SQLite
+  Keep schema flexible while entity columns and types are still moving
+  Avoid a full normalization pass in this phase
+  Make stable identifiers and important links more durable
+  Enable later event-log and replay support through storage choices, not full feature work yet
 
-## Feature Backlog
-
-- `[>]` Finish handbook import end-to-end flow
-  Definition of done:
-  Artifact registration, candidate review, publish flow, and backend persistence all feel reliable
-
-- `[ ]` Connect published handbook rules more clearly into the GM experience
+- `[ ]` Phase 3: War Room v1
   Notes:
-  Review where imported rules should appear in campaign console, combat setup, or session tools
+  This phase is not a combat UI expansion. It is the campaign-graph foundation.
+  Task cluster:
+  NPCs and locations first
+  Relationships between people, places, and campaign context
+  Event log for what happened
+  Derived current state for what is true now
+  Custom authoring first, imported content later
 
-- `[ ]` Add better filtering and review controls for import candidates
+- `[ ]` Phase 4: Player-Safe Publishing and Reuse
   Notes:
-  Likely includes stronger search, document status filters, and better review summaries
+  Separate GM-only material from revealable player content and support campaign continuity.
+  Task cluster:
+  GM-only vs player-safe content boundaries
+  Publish and reveal workflows
+  Cross-session reuse for stages, enemies, notes, and prep assets
+  Continuity support between sessions
 
-- `[ ]` Add import history or audit visibility
+- `[ ]` Phase 5: Atlas v1
   Notes:
-  Useful for understanding what was published, edited, rejected, merged, or split
+  Start simple and fast before considering deep-zoom map tooling.
+  Task cluster:
+  Pinned 2D Roshar map first
+  Clickable places linked to locations, NPCs, and events
+  No OpenSeadragon-first or deep-zoom-first commitment in v1
 
-## Redo / Revisit Queue
-
-- `[>]` Revisit campaign import page structure
+- `[ ]` Phase 6: Codex Return
   Notes:
-  Review whether document list, candidate list, and detail editor should stay in one page component or split further
-  Confirm responsive behavior for narrower screens
+  Bring handbook and rules work back after Session Ops, persistence, and War Room foundations are stronger.
+  Task cluster:
+  Handbook import pipeline
+  Review and publish flow
+  Structured rules integration
+  Reconnect rules to combat, War Room, and Atlas features
 
-- `[ ]` Revisit campaign console information architecture
+## Immediate Queue
+
+- `[>]` Stage reuse across sessions
   Notes:
-  Route: `/gm/campaigns/:campaignId`
-  Check whether the console is the right home for imported rules, campaign-level settings, and handbook outputs
+  Add a clean way to copy or reuse previously created stages instead of rebuilding them per session.
 
-- `[ ]` Revisit session-to-campaign navigation flow
+- `[>]` Combat prep and setup improvements
   Notes:
-  Check if movement between session list, campaign roster, dashboard, and GM tools feels coherent
+  Reduce friction before initiative starts and make encounter setup faster.
 
-- `[ ]` Revisit backend import service boundaries
+- `[>]` Reusable custom enemies and NPC prep flow
   Notes:
-  Keep controllers thin and make sure import orchestration stays in services with clear DTO boundaries
+  Prioritize custom authoring that directly improves session preparation.
 
-## Styling And UX Queue
-
-- `[>]` Polish the import review desk UI
+- `[>]` Player-safe reveal and notes improvements
   Notes:
-  Improve hierarchy between document list, candidate list, and editor
-  Refine spacing, empty states, and feedback for publish / save / reject actions
+  Support table-safe reveals, handoff notes, and controlled display content.
 
-- `[ ]` Run a consistency pass on global form controls and panels
+- `[>]` SQLite migration planning for current JSON-backed domains
   Notes:
-  Shared styles live in `src/styles.scss`
-  Review button, input, textarea, card, and focus-state consistency
+  Define migration order for sessions, stages, combats, rolls, and related core data.
 
-- `[ ]` Audit route-level responsive layouts
+## Deferred Later
+
+- `[-]` Handbook import pipeline
   Notes:
-  Start with `/gm/import/review`, then review campaign console and combat-heavy pages
+  Important but no longer the current mainline. Revisit in Phase 6.
+  Tooling lives in `tools/handbook_import/`.
 
-- `[ ]` Add clearer loading, error, and success states across GM tools
+- `[-]` Import review desk
   Notes:
-  Especially important for import, publishing, and long-running review actions
+  Route: `/gm/import/review`.
+  Frontend lives in `src/app/features/campaign-import/`.
 
-- `[ ]` Review empty states across major screens
+- `[-]` Import UI polish
   Notes:
-  Sessions, combats, imports, and stage manager should all have purposeful empty-state copy
+  Return after the product focus comes back to Codex and handbook review.
 
-## Tech Debt
-
-- `[ ]` Replace scattered semantic literals with named constants where patterns are stabilizing
-
-- `[ ]` Review larger components and stores for extraction once flows settle
+- `[-]` Import filtering and history improvements
   Notes:
-  Keep page components focused on orchestration and move dense transforms into separate files as needed
+  Includes stronger search, status filters, and audit visibility for review decisions.
 
-- `[ ]` Confirm Angular forms usage stays reactive where complexity grows
-  Notes:
-  Current import page should be reviewed if the editor becomes more complex
+## Tech Debt / Architecture Notes
+
+- `[ ]` Replace scattered semantic literals with named constants where patterns stabilize.
+- `[ ]` Keep Angular page components focused on orchestration; extract dense transforms before files get risky to change.
+- `[ ]` Confirm more complex editor flows use reactive forms as they grow.
+- `[ ]` Keep Session Control and War Room surfaces separate in the UI to avoid one giant overloaded dashboard.
+- `[ ]` Use SQLite migration to improve durability and linking, not to lock the domain into a rigid schema too early.
+- `[ ]` Treat events as first-class historical records once War Room work starts, but defer replay and simulation-heavy features.
 
 ## Session Log
 
 - `2026-04-01`: Created `CODEX_WORKBOARD.md` as the shared tracker for future Codex sessions.
+- `2026-04-01`: Rewrote the workboard around phased roadmap planning. Session Ops is now the active phase, SQLite migration is next, and handbook import work moved to Deferred Later.
 
 ## Next Session Prompt Template
 
 Use this when starting a new Codex session:
 
 ```text
-Open CODEX_WORKBOARD.md and continue the [~] item under Active Workstreams.
-If nothing is in progress, start the [>] item under Feature Backlog or Styling And UX Queue.
-Before editing code, update the workboard with what you plan to change.
+Open CODEX_WORKBOARD.md and continue the [~] phase or the highest-priority [>] item in Immediate Queue.
+Before editing code, update the workboard with the task you are taking on, the files or routes involved, and the next step you expect after it.
+If the active phase is blocked, advance the next phase-planning item without changing the overall roadmap.
 ```
