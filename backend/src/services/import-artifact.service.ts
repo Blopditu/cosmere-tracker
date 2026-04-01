@@ -387,6 +387,7 @@ export class ImportArtifactService {
     }
 
     const now = nowIso();
+    const reviewKind = input.action === 'accept' || input.action === 'edit' ? input.kind : undefined;
     const decision: ReviewDecision = {
       id: randomUUID(),
       createdAt: now,
@@ -394,6 +395,7 @@ export class ImportArtifactService {
       revision: 1,
       candidateId,
       action: input.action,
+      kind: reviewKind,
       note: input.note,
       payload: input.payload,
       mergeCandidateIds: input.mergeCandidateIds,
@@ -458,6 +460,7 @@ export class ImportArtifactService {
           this.upsertCandidate(mergedSource);
         }
       } else {
+        candidate.kind = reviewKind ?? candidate.kind;
         candidate.title = asString(input.title, candidate.title);
         candidate.key = asString(input.key, candidate.key);
         candidate.payload = input.payload ?? candidate.payload;

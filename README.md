@@ -47,6 +47,27 @@ PORT=3100 npm run start:backend
 
 The Angular dev server proxies `/api` and `/uploads` to the backend through `proxy.conf.json`.
 
+If you are running the frontend against a different backend base, for example
+`http://localhost:3000/api/v1`, set it once in the browser console:
+
+```js
+localStorage.setItem('cosmere.apiBase', 'http://localhost:3000/api/v1');
+location.reload();
+```
+
+To clear that override and go back to the local Angular proxy:
+
+```js
+localStorage.removeItem('cosmere.apiBase');
+location.reload();
+```
+
+You can also set it temporarily with a query parameter:
+
+```text
+http://localhost:4200/gm/import/review?apiBase=http://localhost:3000/api/v1
+```
+
 ## Scripts
 
 ```bash

@@ -13,7 +13,7 @@ Run the extractor against the local handbook PDF:
 ./.venv-import/bin/python -m handbook_import extract \
   --source .pdffiles/SL001_Stormlight_Handbook_digital.pdf \
   --profile stormlight-handbook \
-  --out .import-cache/stormlight-handbook
+  --out .import-cache/stormlight-handbook-clean
 ```
 
 The tool emits:
@@ -22,3 +22,5 @@ The tool emits:
 - `pages.jsonl`
 - `blocks.jsonl`
 - `candidates.jsonl`
+
+This extractor is intentionally high-precision. It emits fewer candidates and is designed for a fresh re-import, not compatibility with older noisy handbook artifact batches.

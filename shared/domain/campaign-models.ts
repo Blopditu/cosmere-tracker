@@ -788,6 +788,7 @@ export interface ImportCandidate extends BaseRecord {
 export interface ReviewDecision extends BaseRecord {
   candidateId: ID;
   action: ReviewDecisionAction;
+  kind?: ImportCandidateKind;
   note?: string;
   payload?: Record<string, JsonValue>;
   mergeCandidateIds?: ID[];
@@ -808,6 +809,7 @@ export interface RegisterArtifactInput {
 
 export interface ReviewDecisionInput {
   action: ReviewDecisionAction;
+  kind?: ImportCandidateKind;
   title?: string;
   key?: string;
   note?: string;

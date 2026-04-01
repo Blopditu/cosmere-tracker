@@ -56,6 +56,25 @@
   border-bottom: none;
 }
 
+.editor-caption,
+.kind-description,
+.split-caption {
+  margin: 0;
+  color: rgba(228, 232, 246, 0.72);
+  font-size: 0.92rem;
+  line-height: 1.45;
+}
+
+.editor-caption {
+  margin-bottom: 0.25rem;
+}
+
+.kind-description,
+.split-caption {
+  margin-top: -0.35rem;
+  margin-bottom: 0.35rem;
+}
+
 @media (max-width: 1200px) {
   .import-shell,
   .detail-grid {
