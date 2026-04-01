@@ -31,3 +31,15 @@ You are an expert in TypeScript, Angular, and NestJs web apps.
 - export complex logic in separate typescript files.
 - Extract orchestration, domain rules, and transforms before a file becomes risky to change.
 - Review NestJS modules before they become broad “god modules” with unrelated controllers and providers.
+
+## Work Tracking Rules
+
+- Maintain `CODEX_WORKBOARD.md` as the persistent task tracker for Codex sessions.
+- At the start of each substantial task, write what you are about to do in `CODEX_WORKBOARD.md` before making code changes.
+- While work is in progress, keep the active item marked as in progress and add short notes with relevant files, routes, blockers, or decisions.
+- Before ending a session, update `CODEX_WORKBOARD.md` with:
+  - what was completed
+  - what still needs to be done
+  - what should happen next
+- When a new request reveals follow-up work, add it to the appropriate backlog or revisit section instead of leaving it only in chat history.
+- Treat `CODEX_WORKBOARD.md` as the first place to check for current status and the next place to work unless the user explicitly redirects the session.
