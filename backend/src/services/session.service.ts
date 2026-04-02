@@ -1,6 +1,9 @@
 import { randomUUID } from 'node:crypto';
 import {
+  ACTION_CATALOG,
+  ActionKind,
   CampaignRoster,
+  CombatPresetAction,
   CombatRecord,
   CreateSessionInput,
   FullAppBackup,
@@ -32,6 +35,10 @@ type LegacySessionEntity = SessionEntity & {
   partyMembers?: PartyMember[];
   participantTemplates?: ParticipantTemplate[];
 };
+
+function resolveActionKind(action: { actionType: string; actionKind?: ActionKind }): ActionKind | undefined {
+  return action.actionKind ?? ACTION_CATALOG.find((item) => item.key === action.actionType || item.name === action.actionType)?.type;
+}
 
 function summarizeCombatRowsByName(combat: CombatRecord, combatRolls: RollEvent[]) {
   return combat.participants.map((participant) => {
@@ -79,7 +86,7 @@ function summarizeCombatRowsByName(combat: CombatRecord, combatRolls: RollEvent[
       supportActionsUsed: actionEvents.filter(
         (event) => event.hitResult === 'support' || ['aid', 'gain-advantage'].includes(event.actionType),
       ).length,
-      reactionsUsed: combat.turns.filter((turn) => turn.participantId === participant.id && turn.reactionUsed).length,
+      reactionsUsed: actionEvents.filter((event) => resolveActionKind(event) === 'reaction').length,
       biggestHit: Math.max(
         0,
         ...combat.damageEvents
@@ -113,10 +120,42 @@ function normalizeParticipantTemplate(template: ParticipantTemplate): Participan
     imagePath: template.imagePath || undefined,
     maxHealth: template.maxHealth ?? undefined,
     maxFocus: template.maxFocus ?? undefined,
+    presetActions: normalizePresetActions(template.presetActions),
   };
 }
 
-function participantSignature(entry: Pick<PartyMember | ParticipantTemplate, 'name' | 'side' | 'role' | 'maxHealth' | 'maxFocus' | 'notes' | 'imagePath'>): string {
+function normalizePresetActions(actions: CombatPresetAction[] | undefined): CombatPresetAction[] {
+  return (actions ?? [])
+    .map((action) => normalizePresetAction(action))
+    .filter((action): action is CombatPresetAction => Boolean(action));
+}
+
+function normalizePresetAction(action: CombatPresetAction | undefined): CombatPresetAction | null {
+  if (!action) {
+    return null;
+  }
+  const name = action.name.trim();
+  if (!name) {
+    return null;
+  }
+  return {
+    ...action,
+    name,
+    kind: action.kind === 'reaction' || action.kind === 'free' ? action.kind : 'action',
+    actionCost: action.actionCost ?? 0,
+    focusCost: action.focusCost ?? 0,
+    requiresTarget: Boolean(action.requiresTarget),
+    requiresRoll: Boolean(action.requiresRoll),
+    supportsDamage: Boolean(action.supportsDamage),
+    defaultModifier: action.defaultModifier ?? undefined,
+    defaultDamageFormula: action.defaultDamageFormula?.trim() || undefined,
+  };
+}
+
+function participantSignature(
+  entry: Pick<PartyMember | ParticipantTemplate, 'name' | 'side' | 'role' | 'maxHealth' | 'maxFocus' | 'notes' | 'imagePath'> &
+    Partial<Pick<ParticipantTemplate, 'presetActions'>>,
+): string {
   return JSON.stringify({
     name: entry.name.trim().toLowerCase(),
     side: entry.side,
@@ -125,6 +164,17 @@ function participantSignature(entry: Pick<PartyMember | ParticipantTemplate, 'na
     maxFocus: entry.maxFocus ?? null,
     notes: entry.notes?.trim().toLowerCase() || '',
     imagePath: entry.imagePath || '',
+    presetActions: normalizePresetActions(entry.presetActions).map((action) => ({
+      name: action.name.trim().toLowerCase(),
+      kind: action.kind,
+      actionCost: action.actionCost,
+      focusCost: action.focusCost,
+      requiresTarget: action.requiresTarget,
+      requiresRoll: action.requiresRoll,
+      supportsDamage: action.supportsDamage,
+      defaultModifier: action.defaultModifier ?? null,
+      defaultDamageFormula: action.defaultDamageFormula?.trim().toLowerCase() || '',
+    })),
   });
 }
 
@@ -715,10 +765,6 @@ export class SessionService {
           ...round,
           id: nextRoundId,
           combatId: nextCombatId,
-          fastPCIds: round.fastPCIds.map((id) => participantIds.get(id) ?? id),
-          fastNPCIds: round.fastNPCIds.map((id) => participantIds.get(id) ?? id),
-          slowPCIds: round.slowPCIds.map((id) => participantIds.get(id) ?? id),
-          slowNPCIds: round.slowNPCIds.map((id) => participantIds.get(id) ?? id),
         };
       });
 
@@ -734,6 +780,23 @@ export class SessionService {
         };
       });
 
+      const remappedRounds = rounds.map((round, index) => {
+        const sourceRound = combat.rounds[index];
+        return {
+          ...round,
+          participantStates: sourceRound?.participantStates?.map((state) => ({
+            ...state,
+            participantId: participantIds.get(state.participantId) ?? state.participantId,
+            turnId: state.turnId ? turnIds.get(state.turnId) ?? state.turnId : undefined,
+          })) ?? [],
+          fastPCQueueIds: sourceRound?.fastPCQueueIds?.map((id) => turnIds.get(id) ?? id) ?? [],
+          fastNPCQueueIds: sourceRound?.fastNPCQueueIds?.map((id) => turnIds.get(id) ?? id) ?? [],
+          slowPCQueueIds: sourceRound?.slowPCQueueIds?.map((id) => turnIds.get(id) ?? id) ?? [],
+          slowNPCQueueIds: sourceRound?.slowNPCQueueIds?.map((id) => turnIds.get(id) ?? id) ?? [],
+          turnIds: sourceRound?.turnIds?.map((id) => turnIds.get(id) ?? id) ?? [],
+        };
+      });
+
       const actionEvents = combat.actionEvents.map((event) => {
         const nextActionId = randomUUID();
         actionIds.set(event.id, nextActionId);
@@ -742,7 +805,7 @@ export class SessionService {
           id: nextActionId,
           combatId: nextCombatId,
           roundId: roundIds.get(event.roundId) ?? event.roundId,
-          turnId: turnIds.get(event.turnId) ?? event.turnId,
+          turnId: event.turnId ? turnIds.get(event.turnId) ?? event.turnId : undefined,
           actorId: participantIds.get(event.actorId) ?? event.actorId,
           targetIds: event.targetIds.map((id) => participantIds.get(id) ?? id),
           linkedRollId: event.linkedRollId,
@@ -788,9 +851,9 @@ export class SessionService {
         sessionId,
         createdAt: combat.createdAt || timestamp,
         participantIds: participants.map((participant) => participant.id),
-        roundIds: rounds.map((round) => round.id),
+        roundIds: remappedRounds.map((round) => round.id),
         participants,
-        rounds,
+        rounds: remappedRounds,
         turns,
         actionEvents,
         damageEvents,

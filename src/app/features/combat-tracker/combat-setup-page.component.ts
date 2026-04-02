@@ -1,39 +1,56 @@
 import { CommonModule } from '@angular/common';
-import { Component, DestroyRef, computed, inject, signal } from '@angular/core';
-import { FormBuilder, FormsModule, ReactiveFormsModule, Validators } from '@angular/forms';
+import { ChangeDetectionStrategy, Component, DestroyRef, computed, inject, signal } from '@angular/core';
+import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
-import { CreateCombatInput, ParticipantSide, TurnType } from '@shared/domain';
+import { CombatPresetAction, CreateCombatInput, ParticipantSide } from '@shared/domain';
 import { SessionStoreService } from '../../core/session-store.service';
+import { CombatPresetActionEditorComponent } from '../../shared/combat-preset-action-editor.component';
 import { RosharIconComponent } from '../../shared/roshar-icon.component';
 import { CombatStore } from './combat.store';
 import { nextAvailableOrdinal, toAlphabeticSuffix } from './combat-setup.utils';
 
+interface EditableCombatParticipant {
+  participantId: string;
+  name: string;
+  side: ParticipantSide;
+  role?: string;
+  imagePath?: string;
+  currentHealth?: number;
+  currentFocus?: number;
+  maxHealth?: number;
+  maxFocus?: number;
+  presetActions: CombatPresetAction[];
+  sourceTemplateId?: string;
+  templateOrdinal?: number;
+}
+
 @Component({
   selector: 'app-combat-setup-page',
-  imports: [CommonModule, FormsModule, ReactiveFormsModule, RosharIconComponent],
+  imports: [CommonModule, ReactiveFormsModule, RosharIconComponent, CombatPresetActionEditorComponent],
+  changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <section class="page-header combat-setup-header card engraved-panel">
       <div class="route-heading">
         <p class="eyebrow">Combat setup</p>
         <h2>Encounter builder</h2>
-        <p>Pull in the party, add enemy copies from reserve, set Fast or Slow inline, and create round one in a single pass.</p>
+        <p>Pull in the party, add enemy copies from reserve, and queue the encounter. Fast and Slow choices happen live once combat begins.</p>
       </div>
       <div class="encounter-header-summary">
         <article class="route-stat sapphire">
-            <app-roshar-icon key="sessions" label="Roster size" tone="sapphire" [size]="18" />
-            <span class="eyebrow">Roster</span>
-            <strong>{{ participants().length }}</strong>
-          </article>
-          <article class="route-stat topaz">
-            <app-roshar-icon key="fast" label="Fast turns" tone="topaz" [size]="18" />
-            <span class="eyebrow">Fast</span>
-            <strong>{{ fastCount() }}</strong>
-          </article>
-          <article class="route-stat ruby">
-            <app-roshar-icon key="slow" label="Slow turns" tone="ruby" [size]="18" />
-            <span class="eyebrow">Slow</span>
-            <strong>{{ slowCount() }}</strong>
-          </article>
+          <app-roshar-icon key="sessions" label="Roster size" tone="sapphire" [size]="18" />
+          <span class="eyebrow">Roster</span>
+          <strong>{{ participants().length }}</strong>
+        </article>
+        <article class="route-stat topaz">
+          <app-roshar-icon key="sessions" label="Player side" tone="topaz" [size]="18" />
+          <span class="eyebrow">Player side</span>
+          <strong>{{ playerSideCount() }}</strong>
+        </article>
+        <article class="route-stat ruby">
+          <app-roshar-icon key="combat" label="Opposition" tone="ruby" [size]="18" />
+          <span class="eyebrow">Opposition</span>
+          <strong>{{ oppositionCount() }}</strong>
+        </article>
       </div>
     </section>
 
@@ -46,16 +63,7 @@ import { nextAvailableOrdinal, toAlphabeticSuffix } from './combat-setup.utils';
           </div>
           <span class="pill">{{ participants().length }} participants</span>
         </div>
-        <div class="tempo-summary-row" data-tour="combat-setup-round">
-          <span class="tag-chip">
-            <app-roshar-icon key="fast" label="Fast turns" tone="topaz" [size]="14" />
-            {{ fastCount() }} fast
-          </span>
-          <span class="tag-chip">
-            <app-roshar-icon key="slow" label="Slow turns" tone="sapphire" [size]="14" />
-            {{ slowCount() }} slow
-          </span>
-        </div>
+        <span class="tag-chip">Round flow is planned on the live tracker.</span>
       </div>
 
       <form class="form-grid" [formGroup]="form" (ngSubmit)="submit()">
@@ -92,12 +100,11 @@ import { nextAvailableOrdinal, toAlphabeticSuffix } from './combat-setup.utils';
                 }
               </div>
             </div>
-            <div class="roster-grid-head">
+            <div class="roster-grid-head encounter-grid-head">
               <span>Name</span>
               <span>Role</span>
               <span>HP</span>
               <span>Focus</span>
-              <span>Tempo</span>
               <span></span>
             </div>
             @for (group of participantGroups(); track group.label) {
@@ -110,15 +117,42 @@ import { nextAvailableOrdinal, toAlphabeticSuffix } from './combat-setup.utils';
                 <div class="roster-editor-list">
                   @for (participant of group.entries; track participant.participantId) {
                     <article class="roster-editor-row encounter-row">
-                      <input [(ngModel)]="participant.name" [ngModelOptions]="{ standalone: true }" type="text" placeholder="Name" (ngModelChange)="touchParticipants()" />
-                      <input [(ngModel)]="participant.role" [ngModelOptions]="{ standalone: true }" type="text" placeholder="Role" (ngModelChange)="touchParticipants()" />
-                      <input [(ngModel)]="participant.currentHealth" [ngModelOptions]="{ standalone: true }" type="number" min="0" placeholder="Start HP" (ngModelChange)="touchParticipants()" />
-                      <input [(ngModel)]="participant.currentFocus" [ngModelOptions]="{ standalone: true }" type="number" min="0" placeholder="Start Focus" (ngModelChange)="touchParticipants()" />
-                      <div class="tempo-toggle" role="group" aria-label="Turn tempo">
-                        <button type="button" class="button-outline micro-button" [class.active]="participant.tempo === 'fast'" (click)="setTempo(participant.participantId, 'fast')">Fast</button>
-                        <button type="button" class="button-outline micro-button" [class.active]="participant.tempo === 'slow'" (click)="setTempo(participant.participantId, 'slow')">Slow</button>
-                      </div>
+                      <input
+                        [value]="participant.name"
+                        type="text"
+                        placeholder="Name"
+                        (input)="updateTextField(participant.participantId, 'name', $any($event.target).value)"
+                      />
+                      <input
+                        [value]="participant.role ?? ''"
+                        type="text"
+                        placeholder="Role"
+                        (input)="updateTextField(participant.participantId, 'role', $any($event.target).value)"
+                      />
+                      <input
+                        [value]="participant.currentHealth ?? ''"
+                        type="number"
+                        min="0"
+                        placeholder="Start HP"
+                        (input)="updateNumberField(participant.participantId, 'currentHealth', $any($event.target).value)"
+                      />
+                      <input
+                        [value]="participant.currentFocus ?? ''"
+                        type="number"
+                        min="0"
+                        placeholder="Start Focus"
+                        (input)="updateNumberField(participant.participantId, 'currentFocus', $any($event.target).value)"
+                      />
                       <button type="button" class="button-outline button-danger micro-button" (click)="removeParticipant(participant.participantId)">Remove</button>
+                      @if (participant.side === 'enemy' || participant.side === 'npc') {
+                        <app-combat-preset-action-editor
+                          class="roster-preset-editor"
+                          [actions]="participant.presetActions"
+                          [compact]="true"
+                          title="Encounter preset actions"
+                          emptyLabel="No copied preset actions on this enemy yet."
+                          (actionsChange)="updateParticipantPresetActions(participant.participantId, $event)" />
+                      }
                     </article>
                   }
                 </div>
@@ -142,25 +176,11 @@ export class CombatSetupPageComponent {
   private readonly router = inject(Router);
   private readonly destroyRef = inject(DestroyRef);
   private readonly fb = inject(FormBuilder);
+
   readonly sessionId = signal('');
   readonly dashboardLoaded = signal(false);
   readonly submitMode = signal<'queue' | 'open'>('queue');
-  readonly participants = signal<
-    Array<{
-      participantId: string;
-      name: string;
-      side: ParticipantSide;
-      role?: string;
-      imagePath?: string;
-      currentHealth?: number;
-      currentFocus?: number;
-      maxHealth?: number;
-      maxFocus?: number;
-      sourceTemplateId?: string;
-      templateOrdinal?: number;
-      tempo: TurnType;
-    }>
-  >([]);
+  readonly participants = signal<EditableCombatParticipant[]>([]);
   readonly enemyTemplates = signal<
     Array<{
       participantId: string;
@@ -170,22 +190,26 @@ export class CombatSetupPageComponent {
       imagePath?: string;
       maxHealth?: number;
       maxFocus?: number;
+      presetActions: CombatPresetAction[];
     }>
   >([]);
-  readonly fastCount = computed(() => this.participants().filter((entry) => entry.tempo === 'fast').length);
-  readonly slowCount = computed(() => this.participants().filter((entry) => entry.tempo === 'slow').length);
-  readonly participantGroups = computed(() => [
-    {
-      label: 'Party and allies',
-      tone: 'sapphire' as const,
-      entries: this.participants().filter((entry) => entry.side === 'pc' || entry.side === 'ally'),
-    },
-    {
-      label: 'Enemies and NPCs',
-      tone: 'ruby' as const,
-      entries: this.participants().filter((entry) => entry.side === 'enemy' || entry.side === 'npc'),
-    },
-  ].filter((group) => group.entries.length));
+
+  readonly playerSideCount = computed(() => this.participants().filter((entry) => entry.side === 'pc' || entry.side === 'ally').length);
+  readonly oppositionCount = computed(() => this.participants().filter((entry) => entry.side === 'enemy' || entry.side === 'npc').length);
+  readonly participantGroups = computed(() =>
+    [
+      {
+        label: 'Party and allies',
+        tone: 'sapphire' as const,
+        entries: this.participants().filter((entry) => entry.side === 'pc' || entry.side === 'ally'),
+      },
+      {
+        label: 'Enemies and NPCs',
+        tone: 'ruby' as const,
+        entries: this.participants().filter((entry) => entry.side === 'enemy' || entry.side === 'npc'),
+      },
+    ].filter((group) => group.entries.length),
+  );
 
   readonly form = this.fb.nonNullable.group({
     title: ['Tower corridor skirmish', Validators.required],
@@ -200,7 +224,7 @@ export class CombatSetupPageComponent {
       }
       this.sessionId.set(sessionId);
       void this.sessionStore.getDashboard(sessionId).then((dashboard) => {
-        const seededParticipants = dashboard.session.partyMembers.map((member) => ({
+        const seededParticipants: EditableCombatParticipant[] = dashboard.session.partyMembers.map((member) => ({
           participantId: member.id,
           name: member.name,
           side: member.side,
@@ -210,17 +234,18 @@ export class CombatSetupPageComponent {
           currentFocus: member.maxFocus ?? 0,
           maxHealth: member.maxHealth,
           maxFocus: member.maxFocus,
-          tempo: this.defaultTempoForSide(member.side),
+          presetActions: [],
         }));
         this.enemyTemplates.set(
           dashboard.participantTemplates.map((template) => ({
-          participantId: template.id,
-          name: template.name,
-          side: template.side,
-          role: template.role,
-          imagePath: template.imagePath,
-          maxHealth: template.maxHealth,
-          maxFocus: template.maxFocus,
+            participantId: template.id,
+            name: template.name,
+            side: template.side,
+            role: template.role,
+            imagePath: template.imagePath,
+            maxHealth: template.maxHealth,
+            maxFocus: template.maxFocus,
+            presetActions: [...template.presetActions],
           })),
         );
         this.participants.set(seededParticipants);
@@ -231,7 +256,6 @@ export class CombatSetupPageComponent {
   }
 
   async submit(): Promise<void> {
-    const initialRound = this.buildInitialRound();
     const payload: CreateCombatInput = {
       title: this.form.controls.title.value,
       notes: this.form.controls.notes.value,
@@ -240,12 +264,12 @@ export class CombatSetupPageComponent {
         name: participant.name.trim(),
         side: participant.side,
         imagePath: participant.imagePath,
+        presetActions: participant.presetActions,
         currentHealth: participant.currentHealth ?? undefined,
         currentFocus: participant.currentFocus ?? 0,
         maxHealth: participant.maxHealth ?? undefined,
         maxFocus: participant.maxFocus ?? undefined,
       })),
-      initialRound,
     };
     const combat = await this.combatStore.create(this.sessionId(), payload);
     if (this.submitMode() === 'open') {
@@ -260,6 +284,7 @@ export class CombatSetupPageComponent {
     if (!template) {
       return;
     }
+
     const ordinal = nextAvailableOrdinal(
       this.participants()
         .filter((entry) => entry.sourceTemplateId === templateId && entry.templateOrdinal !== undefined)
@@ -267,6 +292,7 @@ export class CombatSetupPageComponent {
     );
     const participantId = `${templateId}:${crypto.randomUUID()}`;
     const name = `${template.name} ${toAlphabeticSuffix(ordinal)}`;
+
     this.participants.update((items) => [
       ...items,
       {
@@ -277,11 +303,11 @@ export class CombatSetupPageComponent {
         side: template.side,
         role: template.role,
         imagePath: template.imagePath,
+        presetActions: [...template.presetActions],
         currentHealth: template.maxHealth,
         currentFocus: template.maxFocus ?? 0,
         maxHealth: template.maxHealth,
         maxFocus: template.maxFocus,
-        tempo: 'slow',
       },
     ]);
   }
@@ -290,40 +316,40 @@ export class CombatSetupPageComponent {
     this.participants.update((items) => items.filter((entry) => entry.participantId !== participantId));
   }
 
-  touchParticipants(): void {
-    this.participants.update((items) => [...items]);
-  }
-
-  setTempo(participantId: string, tempo: TurnType): void {
+  updateParticipantPresetActions(participantId: string, presetActions: CombatPresetAction[]): void {
     this.participants.update((items) =>
-      items.map((entry) => (entry.participantId === participantId ? { ...entry, tempo } : entry)),
+      items.map((entry) => (entry.participantId === participantId ? { ...entry, presetActions: [...presetActions] } : entry)),
     );
   }
 
-  private defaultTempoForSide(side: ParticipantSide): TurnType {
-    return side === 'pc' || side === 'ally' ? 'fast' : 'slow';
+  updateTextField(participantId: string, field: 'name' | 'role', value: string): void {
+    this.participants.update((items) =>
+      items.map((entry) =>
+        entry.participantId === participantId
+          ? {
+              ...entry,
+              [field]: value,
+            }
+          : entry,
+      ),
+    );
   }
 
-  private buildInitialRound(): CreateCombatInput['initialRound'] {
-    const fastPCIds: string[] = [];
-    const fastNPCIds: string[] = [];
-    const slowPCIds: string[] = [];
-    const slowNPCIds: string[] = [];
-
-    for (const participant of this.participants()) {
-      if (participant.tempo === 'fast') {
-        if (participant.side === 'pc' || participant.side === 'ally') {
-          fastPCIds.push(participant.participantId);
-        } else {
-          fastNPCIds.push(participant.participantId);
-        }
-      } else if (participant.side === 'pc' || participant.side === 'ally') {
-        slowPCIds.push(participant.participantId);
-      } else {
-        slowNPCIds.push(participant.participantId);
-      }
-    }
-
-    return { fastPCIds, fastNPCIds, slowPCIds, slowNPCIds };
+  updateNumberField(
+    participantId: string,
+    field: 'currentHealth' | 'currentFocus',
+    value: string,
+  ): void {
+    const normalized = value === '' ? undefined : Number(value);
+    this.participants.update((items) =>
+      items.map((entry) =>
+        entry.participantId === participantId
+          ? {
+              ...entry,
+              [field]: Number.isFinite(normalized) ? normalized : undefined,
+            }
+          : entry,
+      ),
+    );
   }
 }

@@ -1,22 +1,30 @@
 import { randomUUID } from 'node:crypto';
 import {
   ACTION_CATALOG,
+  ActionKind,
   CombatParticipantState,
+  CombatPhase,
+  CombatPresetAction,
   CombatRecord,
   CombatRound,
+  CombatRoundParticipantState,
   CombatSummary,
   CombatSummaryRow,
   CombatTurn,
+  CommitCurrentRoundInput,
+  ConditionEvent,
   CreateActionEventInput,
   CreateCombatInput,
   CreateConditionEventInput,
   CreateDamageEventInput,
-  CreateHealthEventInput,
   CreateFocusEventInput,
-  CreateRoundInput,
+  CreateHealthEventInput,
+  FocusEvent,
   HealthEvent,
+  ReorderCurrentRoundInput,
   RevertActionResult,
-  UpdateTurnInput,
+  TurnType,
+  UpdateCombatStrikePresetInput,
 } from '@shared/domain';
 import { HttpError } from '../lib/http';
 import { nowIso } from '../lib/time';
@@ -24,43 +32,288 @@ import { CombatRepository } from '../repositories/combat.repository';
 import { SessionRepository } from '../repositories/session.repository';
 import { RollService } from './roll.service';
 
-function actionsForTurn(turnType: 'fast' | 'slow'): number {
+const COMBAT_PHASES: CombatPhase[] = ['fast-pc', 'fast-npc', 'slow-pc', 'slow-npc'];
+const PC_PHASES: CombatPhase[] = ['fast-pc', 'slow-pc'];
+
+type QueueKey = 'fastPCQueueIds' | 'fastNPCQueueIds' | 'slowPCQueueIds' | 'slowNPCQueueIds';
+type ResolvedCombatAction = {
+  name: string;
+  kind: ActionKind;
+  catalogKey?: string;
+  presetActionId?: string;
+};
+
+function actionsForTurn(turnType: TurnType): number {
   return turnType === 'fast' ? 2 : 3;
 }
 
-function roundGroups(participants: CombatParticipantState[], input: CreateRoundInput) {
-  return [
-    ...input.fastPCIds.map((participantId) => ({ participantId, turnType: 'fast' as const })),
-    ...input.fastNPCIds.map((participantId) => ({ participantId, turnType: 'fast' as const })),
-    ...input.slowPCIds.map((participantId) => ({ participantId, turnType: 'slow' as const })),
-    ...input.slowNPCIds.map((participantId) => ({ participantId, turnType: 'slow' as const })),
-  ].map((entry) => {
-    const participant = participants.find((item) => item.id === entry.participantId);
-    if (!participant) {
-      throw new HttpError(400, 'Round references an unknown participant.');
-    }
-    return { participant, turnType: entry.turnType };
-  });
+function phaseToTurnType(phase: CombatPhase): TurnType {
+  return phase.startsWith('fast') ? 'fast' : 'slow';
 }
 
-function mapSourceIdsToCombatIds(
-  participants: CombatParticipantState[],
-  input: CreateRoundInput,
-): CreateRoundInput {
-  const toCombatIds = (ids: string[]) =>
-    ids
-      .map((id) => participants.find((participant) => participant.participantId === id || participant.id === id)?.id)
-      .filter((id): id is string => Boolean(id));
+function phaseToQueueKey(phase: CombatPhase): QueueKey {
+  switch (phase) {
+    case 'fast-pc':
+      return 'fastPCQueueIds';
+    case 'fast-npc':
+      return 'fastNPCQueueIds';
+    case 'slow-pc':
+      return 'slowPCQueueIds';
+    case 'slow-npc':
+      return 'slowNPCQueueIds';
+  }
+}
 
+function nextPhase(current: CombatPhase): CombatPhase | null {
+  const index = COMBAT_PHASES.indexOf(current);
+  if (index === -1 || index === COMBAT_PHASES.length - 1) {
+    return null;
+  }
+  return COMBAT_PHASES[index + 1] ?? null;
+}
+
+function catalogAction(actionType: string) {
+  return ACTION_CATALOG.find((item) => item.key === actionType || item.name === actionType);
+}
+
+function resolveActionKind(action: { actionType: string; actionKind?: ActionKind }): ActionKind | undefined {
+  return action.actionKind ?? catalogAction(action.actionType)?.type;
+}
+
+function isReactionAction(action: { actionType: string; actionKind?: ActionKind }): boolean {
+  return resolveActionKind(action) === 'reaction';
+}
+
+function isSupportAction(actionType: string, hitResult: string | undefined): boolean {
+  return hitResult === 'support' || ['aid', 'gain-advantage'].includes(actionType);
+}
+
+function normalizeCombatSide(side: CombatParticipantState['side']): CombatParticipantState['side'] {
+  return side === 'ally' ? 'npc' : side;
+}
+
+function normalizePresetAction(action: CombatPresetAction): CombatPresetAction {
   return {
-    fastPCIds: toCombatIds(input.fastPCIds),
-    fastNPCIds: toCombatIds(input.fastNPCIds),
-    slowPCIds: toCombatIds(input.slowPCIds),
-    slowNPCIds: toCombatIds(input.slowNPCIds),
+    ...action,
+    name: action.name.trim(),
+    kind: action.kind === 'reaction' || action.kind === 'free' ? action.kind : 'action',
+    actionCost: action.actionCost ?? 0,
+    focusCost: action.focusCost ?? 0,
+    requiresTarget: Boolean(action.requiresTarget),
+    requiresRoll: Boolean(action.requiresRoll),
+    supportsDamage: Boolean(action.supportsDamage),
+    defaultModifier: action.defaultModifier ?? undefined,
+    defaultDamageFormula: action.defaultDamageFormula?.trim() || undefined,
   };
 }
 
-function summarizeCombatRows(combat: CombatRecord, combatRolls: Awaited<ReturnType<RollService['listBySession']>>): CombatSummaryRow[] {
+function normalizePresetActions(actions: CombatPresetAction[] | undefined): CombatPresetAction[] {
+  return (actions ?? [])
+    .filter((action) => action.name.trim())
+    .map((action) => normalizePresetAction(action));
+}
+
+function resolveCombatAction(
+  actor: CombatParticipantState,
+  input: Pick<CreateActionEventInput, 'actionType' | 'actionKind' | 'presetActionId'>,
+): ResolvedCombatAction | null {
+  if (input.presetActionId) {
+    const presetAction = actor.presetActions.find((action) => action.id === input.presetActionId);
+    if (!presetAction) {
+      return null;
+    }
+    return {
+      name: presetAction.name,
+      kind: presetAction.kind,
+      presetActionId: presetAction.id,
+    };
+  }
+
+  const item = catalogAction(input.actionType);
+  if (!item) {
+    return null;
+  }
+  return {
+    name: item.key,
+    kind: item.type,
+    catalogKey: item.key,
+  };
+}
+
+function isParticipantEligibleForPhase(participant: CombatParticipantState, phase: CombatPhase): boolean {
+  return PC_PHASES.includes(phase) ? participant.side === 'pc' : participant.side !== 'pc';
+}
+
+function sortTurnIdsByOrder(turnIds: string[], turns: CombatTurn[]): string[] {
+  return [...turnIds].sort((leftId, rightId) => {
+    const left = turns.find((turn) => turn.id === leftId);
+    const right = turns.find((turn) => turn.id === rightId);
+    if (!left || !right) {
+      return leftId.localeCompare(rightId);
+    }
+    return left.order - right.order || left.startedAt?.localeCompare(right.startedAt ?? '') || left.id.localeCompare(right.id);
+  });
+}
+
+function currentRound(combat: CombatRecord): CombatRound | undefined {
+  if (combat.currentRoundNumber <= 0) {
+    return combat.rounds.at(-1);
+  }
+  return combat.rounds.find((round) => round.roundNumber === combat.currentRoundNumber) ?? combat.rounds.at(-1);
+}
+
+function previousRound(combat: CombatRecord, roundId: string): CombatRound | undefined {
+  const index = combat.rounds.findIndex((round) => round.id === roundId);
+  if (index <= 0) {
+    return undefined;
+  }
+  return combat.rounds[index - 1];
+}
+
+function participantStateFor(round: CombatRound, participantId: string): CombatRoundParticipantState | undefined {
+  return round.participantStates.find((state) => state.participantId === participantId);
+}
+
+function replaceRound(rounds: CombatRound[], nextRound: CombatRound): CombatRound[] {
+  return rounds.map((round) => (round.id === nextRound.id ? nextRound : round));
+}
+
+function ensureCurrentRound(combat: CombatRecord): CombatRound {
+  const round = currentRound(combat);
+  if (!round) {
+    throw new HttpError(400, 'Combat has no active round.');
+  }
+  return round;
+}
+
+function buildRound(
+  combatId: string,
+  roundNumber: number,
+  participants: CombatParticipantState[],
+  previous?: CombatRound,
+): CombatRound {
+  return {
+    id: randomUUID(),
+    combatId,
+    roundNumber,
+    currentPhase: 'fast-pc',
+    participantStates: participants.map((participant) => ({
+      participantId: participant.id,
+      reactionAvailable: previous
+        ? participantStateFor(previous, participant.id)?.reactionAvailable ?? true
+        : true,
+    })),
+    fastPCQueueIds: [],
+    fastNPCQueueIds: [],
+    slowPCQueueIds: [],
+    slowNPCQueueIds: [],
+    turnIds: [],
+    createdAt: nowIso(),
+  };
+}
+
+function deriveReactionAvailability(
+  combat: CombatRecord,
+  round: CombatRound,
+  participantId: string,
+  turn: CombatTurn | undefined,
+): boolean {
+  const priorRound = previousRound(combat, round.id);
+  let reactionAvailable = priorRound
+    ? participantStateFor(priorRound, participantId)?.reactionAvailable ?? true
+    : true;
+
+  const timeline: Array<{ timestamp: string; priority: number; available: boolean }> = [];
+  if (turn?.startedAt) {
+    timeline.push({ timestamp: turn.startedAt, priority: 0, available: true });
+  }
+
+  for (const event of combat.actionEvents) {
+    if (event.roundId !== round.id || event.actorId !== participantId || !isReactionAction(event)) {
+      continue;
+    }
+    timeline.push({ timestamp: event.timestamp, priority: 1, available: false });
+  }
+
+  timeline.sort((left, right) => left.timestamp.localeCompare(right.timestamp) || left.priority - right.priority);
+  for (const entry of timeline) {
+    reactionAvailable = entry.available;
+  }
+  return reactionAvailable;
+}
+
+function rebuildRoundState(combat: CombatRecord, round: CombatRound): CombatRound {
+  const roundTurns = combat.turns.filter((turn) => turn.roundId === round.id);
+  const participantStates = combat.participants.map((participant) => {
+    const turn = roundTurns.find((entry) => entry.participantId === participant.id);
+    return {
+      participantId: participant.id,
+      turnId: turn?.id,
+      turnType: turn?.turnType,
+      turnStatus: turn?.status,
+      reactionAvailable: deriveReactionAvailability(combat, round, participant.id, turn),
+      committedAt: turn?.startedAt,
+      completedAt: turn?.endedAt,
+    };
+  });
+
+  return {
+    ...round,
+    participantStates,
+    fastPCQueueIds: sortTurnIdsByOrder(round.fastPCQueueIds, roundTurns),
+    fastNPCQueueIds: sortTurnIdsByOrder(round.fastNPCQueueIds, roundTurns),
+    slowPCQueueIds: sortTurnIdsByOrder(round.slowPCQueueIds, roundTurns),
+    slowNPCQueueIds: sortTurnIdsByOrder(round.slowNPCQueueIds, roundTurns),
+    turnIds: sortTurnIdsByOrder(round.turnIds, roundTurns),
+  };
+}
+
+function rebuildCombatRound(combat: CombatRecord, roundId: string): CombatRecord {
+  const round = combat.rounds.find((entry) => entry.id === roundId);
+  if (!round) {
+    return combat;
+  }
+  const nextRound = rebuildRoundState(combat, round);
+  return {
+    ...combat,
+    rounds: replaceRound(combat.rounds, nextRound),
+  };
+}
+
+function openTurnsForPhase(combat: CombatRecord, round: CombatRound, phase: CombatPhase): CombatTurn[] {
+  const queue = round[phaseToQueueKey(phase)];
+  return queue
+    .map((turnId) => combat.turns.find((turn) => turn.id === turnId))
+    .filter((turn): turn is CombatTurn => turn !== undefined && turn.status === 'open');
+}
+
+function isTurnExhausted(turn: CombatTurn): boolean {
+  return turn.actionsUsed >= turn.actionsAvailable;
+}
+
+function completeTurns(combat: CombatRecord, turnIds: string[]): CombatRecord {
+  if (!turnIds.length) {
+    return combat;
+  }
+
+  return {
+    ...combat,
+    turns: combat.turns.map((turn) =>
+      turnIds.includes(turn.id)
+        ? {
+            ...turn,
+            status: 'complete' as const,
+            endedAt: turn.endedAt ?? nowIso(),
+          }
+        : turn,
+    ),
+  };
+}
+
+function summarizeCombatRows(
+  combat: CombatRecord,
+  combatRolls: Awaited<ReturnType<RollService['listBySession']>>,
+): CombatSummaryRow[] {
   return combat.participants.map((participant) => {
     const actionEvents = combat.actionEvents.filter((event) => event.actorId === participant.id);
     const healthEvents = combat.healthEvents ?? [];
@@ -105,10 +358,8 @@ function summarizeCombatRows(combat: CombatRecord, combatRolls: Awaited<ReturnTy
       focusSpent: combat.focusEvents
         .filter((event) => event.participantId === participant.id && event.delta < 0)
         .reduce((sum, event) => sum + Math.abs(event.delta), 0),
-      supportActionsUsed: actionEvents.filter(
-        (event) => event.hitResult === 'support' || ['aid', 'gain-advantage'].includes(event.actionType),
-      ).length,
-      reactionsUsed: combat.turns.filter((turn) => turn.participantId === participant.id && turn.reactionUsed).length,
+      supportActionsUsed: actionEvents.filter((event) => isSupportAction(event.actionType, event.hitResult)).length,
+      reactionsUsed: actionEvents.filter((event) => isReactionAction(event)).length,
       biggestHit: Math.max(
         0,
         ...combat.damageEvents
@@ -151,8 +402,9 @@ export class CombatService {
       id: randomUUID(),
       combatId,
       participantId: participant.participantId,
-      name: participant.name,
-      side: participant.side,
+      name: participant.name.trim(),
+      side: normalizeCombatSide(participant.side),
+      presetActions: normalizePresetActions(participant.presetActions),
       imagePath: participant.imagePath,
       maxHealth: participant.maxHealth,
       currentHealth: participant.currentHealth,
@@ -161,33 +413,19 @@ export class CombatService {
       conditions: [],
     }));
 
-    let rounds: CombatRound[] = [];
-    let turns: CombatTurn[] = [];
-
-    if (input.initialRound) {
-      const built = this.buildRound(
-        combatId,
-        participants,
-        1,
-        mapSourceIdsToCombatIds(participants, input.initialRound),
-      );
-      rounds = [built.round];
-      turns = built.turns;
-    }
-
     const combat: CombatRecord = {
       id: combatId,
       sessionId,
       title: input.title.trim(),
       status: 'planned',
       createdAt: nowIso(),
-      notes: input.notes?.trim(),
+      notes: input.notes?.trim() || undefined,
       participantIds: participants.map((participant) => participant.id),
-      currentRoundNumber: rounds[0]?.roundNumber ?? 0,
-      roundIds: rounds.map((round) => round.id),
+      currentRoundNumber: 0,
+      roundIds: [],
       participants,
-      rounds,
-      turns,
+      rounds: [],
+      turns: [],
       actionEvents: [],
       damageEvents: [],
       focusEvents: [],
@@ -197,46 +435,6 @@ export class CombatService {
 
     await this.combatRepository.upsert(combat);
     return combat;
-  }
-
-  private buildRound(
-    combatId: string,
-    participants: CombatParticipantState[],
-    roundNumber: number,
-    input: CreateRoundInput,
-  ): { round: CombatRound; turns: CombatTurn[] } {
-    const roundId = randomUUID();
-    const turnRefs = roundGroups(participants, input);
-    const turns = turnRefs.map(({ participant, turnType }) => ({
-      id: randomUUID(),
-      combatId,
-      roundId,
-      participantId: participant.id,
-      turnType,
-      actionsAvailable: actionsForTurn(turnType),
-      actionsUsed: 0,
-      reactionAvailable: true,
-      reactionUsed: false,
-      focusAtStart: participant.currentFocus,
-      focusAtEnd: participant.currentFocus,
-      damageDealt: 0,
-      damageTaken: 0,
-    }));
-
-    return {
-      round: {
-        id: roundId,
-        combatId,
-        roundNumber,
-        fastPCIds: input.fastPCIds,
-        fastNPCIds: input.fastNPCIds,
-        slowPCIds: input.slowPCIds,
-        slowNPCIds: input.slowNPCIds,
-        turnIds: turns.map((turn) => turn.id),
-        createdAt: nowIso(),
-      },
-      turns,
-    };
   }
 
   async update(combatId: string, patch: Partial<CombatRecord>): Promise<CombatRecord> {
@@ -254,80 +452,281 @@ export class CombatService {
   }
 
   async start(combatId: string): Promise<CombatRecord> {
-    return this.update(combatId, { status: 'active', startedAt: nowIso() });
+    const combat = await this.get(combatId);
+    const rounds = combat.rounds.length ? combat.rounds : [buildRound(combat.id, 1, combat.participants)];
+    const next: CombatRecord = {
+      ...combat,
+      status: 'active',
+      startedAt: combat.startedAt ?? nowIso(),
+      currentRoundNumber: rounds.at(-1)?.roundNumber ?? 1,
+      roundIds: rounds.map((round) => round.id),
+      rounds,
+    };
+    const refreshed = rebuildCombatRound(next, rounds.at(-1)?.id ?? '');
+    await this.combatRepository.upsert(refreshed);
+    return refreshed;
   }
 
   async finish(combatId: string): Promise<CombatRecord> {
     return this.update(combatId, { status: 'finished', endedAt: nowIso() });
   }
 
-  async createRound(combatId: string, input: CreateRoundInput): Promise<CombatRecord> {
+  async updateStrikePreset(
+    combatId: string,
+    participantId: string,
+    input: UpdateCombatStrikePresetInput,
+  ): Promise<CombatRecord> {
     const combat = await this.get(combatId);
-    const roundNumber = combat.currentRoundNumber + 1;
-    const built = this.buildRound(combat.id, combat.participants, roundNumber, input);
-    const next: CombatRecord = {
-      ...combat,
-      currentRoundNumber: roundNumber,
-      rounds: [...combat.rounds, built.round],
-      roundIds: [...combat.roundIds, built.round.id],
-      turns: [
-        ...combat.turns.map((turn) => ({ ...turn, reactionAvailable: false })),
-        ...built.turns,
-      ],
-    };
-    await this.combatRepository.upsert(next);
-    return next;
-  }
-
-  async updateRound(combatId: string, roundId: string, input: CreateRoundInput): Promise<CombatRecord> {
-    const combat = await this.get(combatId);
-    const round = combat.rounds.find((entry) => entry.id === roundId);
-    if (!round) {
-      throw new HttpError(404, 'Round not found.');
+    const participant = combat.participants.find((entry) => entry.id === participantId);
+    if (!participant) {
+      throw new HttpError(404, 'Combat participant not found.');
     }
-    const rebuilt = this.buildRound(combat.id, combat.participants, round.roundNumber, input);
-    const turns = combat.turns.filter((turn) => turn.roundId !== roundId);
+
     const next: CombatRecord = {
       ...combat,
-      rounds: combat.rounds.map((entry) => (entry.id === roundId ? { ...rebuilt.round, id: roundId } : entry)),
-      turns: [...turns, ...rebuilt.turns.map((turn) => ({ ...turn, roundId }))],
+      participants: combat.participants.map((entry) =>
+        entry.id === participantId
+          ? {
+              ...entry,
+              defaultStrikePreset: {
+                attackModifier: input.attackModifier,
+                damageFormula: input.damageFormula?.trim() || undefined,
+                defaultFocusCost: input.defaultFocusCost ?? 0,
+              },
+            }
+          : entry,
+      ),
     };
     await this.combatRepository.upsert(next);
     return next;
   }
 
-  async updateTurn(combatId: string, turnId: string, patch: UpdateTurnInput): Promise<CombatRecord> {
+  async commitCurrentRound(combatId: string, input: CommitCurrentRoundInput): Promise<CombatRecord> {
     const combat = await this.get(combatId);
-    const next: CombatRecord = {
-      ...combat,
-      turns: combat.turns.map((turn) =>
-        turn.id === turnId
-          ? {
-              ...turn,
-              ...patch,
-            }
-          : turn,
-      ),
-      participants: combat.participants.map((participant) => {
-        const updatedTurn = combat.turns.find((turn) => turn.id === turnId);
-        if (!updatedTurn || updatedTurn.participantId !== participant.id || patch.focusAtEnd === undefined) {
-          return participant;
-        }
-        return {
-          ...participant,
-          currentFocus: patch.focusAtEnd,
-        };
-      }),
+    if (combat.status !== 'active') {
+      throw new HttpError(400, 'Combat must be active before turns can be committed.');
+    }
+
+    const round = ensureCurrentRound(combat);
+    const participant = combat.participants.find((entry) => entry.id === input.participantId);
+    if (!participant) {
+      throw new HttpError(404, 'Combat participant not found.');
+    }
+    if (!isParticipantEligibleForPhase(participant, round.currentPhase)) {
+      throw new HttpError(400, 'Participant cannot commit during the current phase.');
+    }
+
+    const state = participantStateFor(round, participant.id);
+    if (state?.turnId) {
+      throw new HttpError(400, 'Participant already has a turn committed this round.');
+    }
+
+    const turnType = phaseToTurnType(round.currentPhase);
+    const queueKey = phaseToQueueKey(round.currentPhase);
+    const committedAt = nowIso();
+    const turn: CombatTurn = {
+      id: randomUUID(),
+      combatId: combat.id,
+      roundId: round.id,
+      participantId: participant.id,
+      phase: round.currentPhase,
+      turnType,
+      status: 'open',
+      order: round[queueKey].length,
+      actionsAvailable: actionsForTurn(turnType),
+      actionsUsed: 0,
+      focusAtStart: participant.currentFocus,
+      focusAtEnd: participant.currentFocus,
+      damageDealt: 0,
+      damageTaken: 0,
+      startedAt: committedAt,
     };
-    await this.combatRepository.upsert(next);
-    return next;
+
+    const nextRound: CombatRound = {
+      ...round,
+      [queueKey]: [...round[queueKey], turn.id],
+      turnIds: [...round.turnIds, turn.id],
+    };
+    const nextCombatBase: CombatRecord = {
+      ...combat,
+      turns: [...combat.turns, turn],
+      rounds: replaceRound(combat.rounds, nextRound),
+    };
+    const nextCombat = rebuildCombatRound(nextCombatBase, round.id);
+    await this.combatRepository.upsert(nextCombat);
+    return nextCombat;
+  }
+
+  async advanceCurrentPhase(combatId: string): Promise<CombatRecord> {
+    const combat = await this.get(combatId);
+    if (combat.status !== 'active') {
+      throw new HttpError(400, 'Combat must be active before phases can advance.');
+    }
+
+    const round = ensureCurrentRound(combat);
+    const phaseOpenTurns = openTurnsForPhase(combat, round, round.currentPhase);
+    const blockingOpenTurns = phaseOpenTurns.filter((turn) => !isTurnExhausted(turn));
+    if (blockingOpenTurns.length) {
+      throw new HttpError(400, 'Complete the open turns in the current phase before advancing.');
+    }
+
+    const combatWithClosedExhaustedTurns = completeTurns(
+      combat,
+      phaseOpenTurns.filter((turn) => isTurnExhausted(turn)).map((turn) => turn.id),
+    );
+    const refreshedRound = ensureCurrentRound(combatWithClosedExhaustedTurns);
+
+    const followingPhase = nextPhase(refreshedRound.currentPhase);
+    if (followingPhase) {
+      const nextRound = rebuildRoundState(combatWithClosedExhaustedTurns, { ...refreshedRound, currentPhase: followingPhase });
+      const nextCombat: CombatRecord = {
+        ...combatWithClosedExhaustedTurns,
+        rounds: replaceRound(combatWithClosedExhaustedTurns.rounds, nextRound),
+      };
+      await this.combatRepository.upsert(nextCombat);
+      return nextCombat;
+    }
+
+    const completedRound = rebuildRoundState(combatWithClosedExhaustedTurns, { ...refreshedRound, completedAt: nowIso() });
+    const nextRound = buildRound(combat.id, completedRound.roundNumber + 1, combatWithClosedExhaustedTurns.participants, completedRound);
+    const nextCombat: CombatRecord = {
+      ...combatWithClosedExhaustedTurns,
+      currentRoundNumber: nextRound.roundNumber,
+      roundIds: [...combatWithClosedExhaustedTurns.roundIds.filter((id) => id !== completedRound.id), completedRound.id, nextRound.id],
+      rounds: [...replaceRound(combatWithClosedExhaustedTurns.rounds, completedRound), nextRound],
+    };
+    const refreshed = rebuildCombatRound(nextCombat, nextRound.id);
+    await this.combatRepository.upsert(refreshed);
+    return refreshed;
+  }
+
+  async reorderCurrentRound(combatId: string, input: ReorderCurrentRoundInput): Promise<CombatRecord> {
+    const combat = await this.get(combatId);
+    const round = ensureCurrentRound(combat);
+    const queueKey = phaseToQueueKey(input.phase);
+    const existingTurnIds = round[queueKey];
+    if (
+      existingTurnIds.length !== input.orderedTurnIds.length ||
+      existingTurnIds.some((turnId) => !input.orderedTurnIds.includes(turnId))
+    ) {
+      throw new HttpError(400, 'Reorder payload must contain the same turn ids as the current phase queue.');
+    }
+
+    const nextTurns = combat.turns.map((turn) => {
+      const index = input.orderedTurnIds.indexOf(turn.id);
+      if (index === -1) {
+        return turn;
+      }
+      return {
+        ...turn,
+        order: index,
+      };
+    });
+    const nextRound = rebuildRoundState(
+      {
+        ...combat,
+        turns: nextTurns,
+      },
+      {
+        ...round,
+        [queueKey]: [...input.orderedTurnIds],
+      },
+    );
+    const nextCombat: CombatRecord = {
+      ...combat,
+      turns: nextTurns,
+      rounds: replaceRound(combat.rounds, nextRound),
+    };
+    await this.combatRepository.upsert(nextCombat);
+    return nextCombat;
+  }
+
+  async completeTurn(combatId: string, turnId: string): Promise<CombatRecord> {
+    const combat = await this.get(combatId);
+    const turn = combat.turns.find((entry) => entry.id === turnId);
+    if (!turn) {
+      throw new HttpError(404, 'Turn not found.');
+    }
+
+    const nextTurns = combat.turns.map((entry) =>
+      entry.id === turnId
+        ? {
+            ...entry,
+            status: 'complete' as const,
+            endedAt: entry.endedAt ?? nowIso(),
+          }
+        : entry,
+    );
+    const nextCombatBase: CombatRecord = {
+      ...combat,
+      turns: nextTurns,
+    };
+    const nextCombat = rebuildCombatRound(nextCombatBase, turn.roundId);
+    await this.combatRepository.upsert(nextCombat);
+    return nextCombat;
+  }
+
+  async spendReaction(combatId: string, participantId: string): Promise<CombatRecord> {
+    const combat = await this.get(combatId);
+    const round = ensureCurrentRound(combat);
+    const actor = combat.participants.find((participant) => participant.id === participantId);
+    if (!actor) {
+      throw new HttpError(404, 'Combat participant not found.');
+    }
+    if (!participantStateFor(round, participantId)?.reactionAvailable) {
+      throw new HttpError(400, 'Reaction is not currently available.');
+    }
+
+    return this.logAction(combatId, {
+      roundId: round.id,
+      turnId: participantStateFor(round, participantId)?.turnId,
+      actorId: participantId,
+      actionType: 'custom-reaction',
+      actionKind: 'reaction',
+      targetIds: [],
+      actionCost: 0,
+      focusCost: 0,
+      note: 'Manual reaction spend',
+    });
   }
 
   async logAction(combatId: string, input: CreateActionEventInput): Promise<CombatRecord> {
     const combat = await this.get(combatId);
-    const turn = combat.turns.find((entry) => entry.id === input.turnId);
-    if (!turn) {
+    const round = combat.rounds.find((entry) => entry.id === input.roundId);
+    if (!round) {
+      throw new HttpError(404, 'Round not found.');
+    }
+    const actor = combat.participants.find((participant) => participant.id === input.actorId);
+    if (!actor) {
+      throw new HttpError(404, 'Actor not found.');
+    }
+
+    const resolvedAction = resolveCombatAction(actor, input);
+    if (!resolvedAction) {
+      throw new HttpError(400, 'Unknown combat action.');
+    }
+
+    const turn = input.turnId ? combat.turns.find((entry) => entry.id === input.turnId) : undefined;
+    if (input.turnId && !turn) {
       throw new HttpError(404, 'Turn not found.');
+    }
+    if (turn && turn.participantId !== input.actorId) {
+      throw new HttpError(400, 'Turn does not belong to the selected actor.');
+    }
+    if (turn && turn.roundId !== input.roundId) {
+      throw new HttpError(400, 'Turn does not belong to the selected round.');
+    }
+    if (resolvedAction.kind !== 'reaction' && !turn) {
+      throw new HttpError(400, 'Actions and free actions require a committed turn.');
+    }
+    if (turn && resolvedAction.kind !== 'reaction' && turn.status !== 'open') {
+      throw new HttpError(400, 'Only open turns can log actions or free actions.');
+    }
+    if (turn && resolvedAction.kind === 'action' && turn.actionsUsed + input.actionCost > turn.actionsAvailable) {
+      throw new HttpError(400, 'This turn has no actions remaining for that log entry.');
+    }
+    if (resolvedAction.kind === 'reaction' && !participantStateFor(round, input.actorId)?.reactionAvailable) {
+      throw new HttpError(400, 'Reaction is not currently available.');
     }
 
     let linkedRollId: string | undefined;
@@ -335,12 +734,13 @@ export class CombatService {
       const roll = await this.rollService.create(combat.sessionId, {
         ...input.linkedRoll,
         combatId: combat.id,
-        roundNumber: combat.rounds.find((round) => round.id === input.roundId)?.roundNumber,
+        roundNumber: round.roundNumber,
         turnId: input.turnId,
       });
       linkedRollId = roll.id;
     }
 
+    const timestamp = nowIso();
     const actionEventId = randomUUID();
     const actionEvent = {
       id: actionEventId,
@@ -348,44 +748,25 @@ export class CombatService {
       roundId: input.roundId,
       turnId: input.turnId,
       actorId: input.actorId,
-      actionType: input.actionType,
+      actionType: resolvedAction.name,
+      actionKind: resolvedAction.kind,
+      presetActionId: resolvedAction.presetActionId,
       targetIds: input.targetIds,
       actionCost: input.actionCost,
       focusCost: input.focusCost,
       linkedRollId,
       hitResult: input.hitResult,
       damageAmount: input.damageAmount,
+      damageFormula: input.damageFormula,
+      damageBreakdown: input.damageBreakdown,
+      actionLabel: input.actionLabel,
       note: input.note,
-      timestamp: nowIso(),
+      timestamp,
     };
 
-    const nextParticipants = combat.participants.map((participant) => {
-      if (participant.id !== input.actorId) {
-        return participant;
-      }
-      return {
-        ...participant,
-        currentFocus: Math.max(0, participant.currentFocus - input.focusCost),
-      };
-    });
-
-    const nextTurns = combat.turns.map((entry) => {
-      if (entry.id !== input.turnId) {
-        return entry;
-      }
-      const catalogItem = ACTION_CATALOG.find((item) => item.name === input.actionType || item.key === input.actionType);
-      const isReaction = catalogItem?.type === 'reaction';
-      return {
-        ...entry,
-        actionsUsed: entry.actionsUsed + input.actionCost,
-        reactionUsed: isReaction ? true : entry.reactionUsed,
-        focusAtEnd: Math.max(0, entry.focusAtEnd - input.focusCost),
-        damageDealt: entry.damageDealt + (input.damageAmount ?? 0),
-      };
-    });
-
-    const damageEvents = [...combat.damageEvents];
     const targetDamage = input.damageAmount ?? 0;
+    const totalDamageDealt = targetDamage > 0 ? targetDamage * input.targetIds.length : 0;
+    const damageEvents = [...combat.damageEvents];
     for (const targetId of input.targetIds) {
       if (targetDamage <= 0) {
         continue;
@@ -397,18 +778,9 @@ export class CombatService {
         targetParticipantId: targetId,
         amount: targetDamage,
         causedByActionEventId: actionEventId,
-        timestamp: nowIso(),
+        timestamp,
       });
     }
-
-    const participantsWithDamage = nextParticipants.map((participant) => {
-      const received = damageEvents
-        .filter((event) => event.targetParticipantId === participant.id)
-        .reduce((sum, event) => sum + event.amount, 0);
-      return participant.currentHealth === undefined
-        ? participant
-        : { ...participant, currentHealth: Math.max(0, (participant.maxHealth ?? participant.currentHealth) - received) };
-    });
 
     const focusEvents = [...combat.focusEvents];
     if (input.focusCost > 0) {
@@ -417,22 +789,56 @@ export class CombatService {
         combatId,
         participantId: input.actorId,
         delta: -Math.abs(input.focusCost),
-        reason: input.actionType,
+        reason: resolvedAction.name,
         relatedActionEventId: actionEventId,
-        timestamp: nowIso(),
+        timestamp,
       });
     }
 
-    const next: CombatRecord = {
+    const nextParticipants = combat.participants.map((participant) => {
+      let next = participant;
+      if (participant.id === input.actorId && input.focusCost > 0) {
+        next = {
+          ...next,
+          currentFocus: Math.max(0, participant.currentFocus - input.focusCost),
+        };
+      }
+
+      const incomingDamage = damageEvents
+        .filter((event) => event.causedByActionEventId === actionEventId && event.targetParticipantId === participant.id)
+        .reduce((sum, event) => sum + event.amount, 0);
+      if (incomingDamage > 0 && next.currentHealth !== undefined) {
+        next = {
+          ...next,
+          currentHealth: Math.max(0, next.currentHealth - incomingDamage),
+        };
+      }
+      return next;
+    });
+
+    const nextTurns = combat.turns.map((entry) => {
+      if (entry.id !== input.turnId) {
+        return entry;
+      }
+      return {
+        ...entry,
+        actionsUsed: resolvedAction.kind === 'action' ? entry.actionsUsed + input.actionCost : entry.actionsUsed,
+        focusAtEnd: Math.max(0, entry.focusAtEnd - input.focusCost),
+        damageDealt: entry.damageDealt + totalDamageDealt,
+      };
+    });
+
+    const nextCombatBase: CombatRecord = {
       ...combat,
-      participants: participantsWithDamage,
+      participants: nextParticipants,
       turns: nextTurns,
       actionEvents: [...combat.actionEvents, actionEvent],
       damageEvents,
       focusEvents,
     };
-    await this.combatRepository.upsert(next);
-    return next;
+    const nextCombat = rebuildCombatRound(nextCombatBase, round.id);
+    await this.combatRepository.upsert(nextCombat);
+    return nextCombat;
   }
 
   async revertAction(combatId: string, actionEventId: string): Promise<RevertActionResult> {
@@ -442,12 +848,11 @@ export class CombatService {
       throw new HttpError(404, 'Action event not found.');
     }
 
+    const actionKind = resolveActionKind(action);
     const relatedDamageEvents = combat.damageEvents.filter((event) => event.causedByActionEventId === actionEventId);
     const relatedFocusEvents = combat.focusEvents.filter((event) => event.relatedActionEventId === actionEventId);
     const relatedHealthEvents = (combat.healthEvents ?? []).filter((event) => event.relatedActionEventId === actionEventId);
     const relatedConditionEvents = combat.conditionEvents.filter((event) => event.note === `action:${actionEventId}`);
-    const actionTurn = combat.turns.find((turn) => turn.id === action.turnId);
-    const catalogItem = ACTION_CATALOG.find((item) => item.name === action.actionType || item.key === action.actionType);
 
     if (action.linkedRollId) {
       await this.rollService.delete(action.linkedRollId);
@@ -455,18 +860,17 @@ export class CombatService {
 
     const nextParticipants = combat.participants.map((participant) => {
       let next = participant;
-      if (participant.id === action.actorId) {
-        const restoredFocus = participant.currentFocus + action.focusCost;
+      if (participant.id === action.actorId && action.focusCost > 0) {
         next = {
           ...next,
-          currentFocus: Math.min(next.maxFocus ?? Number.POSITIVE_INFINITY, restoredFocus),
+          currentFocus: Math.min(next.maxFocus ?? Number.POSITIVE_INFINITY, next.currentFocus + action.focusCost),
         };
       }
 
       const restoredDamage = relatedDamageEvents
         .filter((event) => event.targetParticipantId === participant.id)
         .reduce((sum, event) => sum + event.amount, 0);
-      if (restoredDamage && next.currentHealth !== undefined) {
+      if (restoredDamage > 0 && next.currentHealth !== undefined) {
         next = {
           ...next,
           currentHealth: Math.min(next.maxHealth ?? Number.POSITIVE_INFINITY, next.currentHealth + restoredDamage),
@@ -508,22 +912,18 @@ export class CombatService {
       if (turn.id !== action.turnId) {
         return turn;
       }
-      const otherReactionEvents = combat.actionEvents.filter(
-        (event) =>
-          event.turnId === turn.id &&
-          event.id !== actionEventId &&
-          ACTION_CATALOG.find((item) => item.name === event.actionType || item.key === event.actionType)?.type === 'reaction',
-      );
       return {
         ...turn,
-        actionsUsed: Math.max(0, turn.actionsUsed - action.actionCost),
-        reactionUsed: catalogItem?.type === 'reaction' ? otherReactionEvents.length > 0 : turn.reactionUsed,
+        actionsUsed: actionKind === 'action' ? Math.max(0, turn.actionsUsed - action.actionCost) : turn.actionsUsed,
         focusAtEnd: Math.max(0, turn.focusAtEnd + action.focusCost),
-        damageDealt: Math.max(0, turn.damageDealt - (action.damageAmount ?? 0)),
+        damageDealt: Math.max(
+          0,
+          turn.damageDealt - relatedDamageEvents.reduce((sum, event) => sum + event.amount, 0),
+        ),
       };
     });
 
-    const next: CombatRecord = {
+    const nextCombatBase: CombatRecord = {
       ...combat,
       participants: nextParticipants,
       turns: nextTurns,
@@ -533,8 +933,9 @@ export class CombatService {
       healthEvents: (combat.healthEvents ?? []).filter((event) => event.relatedActionEventId !== actionEventId),
       conditionEvents: combat.conditionEvents.filter((event) => event.note !== `action:${actionEventId}`),
     };
-    await this.combatRepository.upsert(next);
-    return { combat: next, revertedActionId: actionEventId };
+    const nextCombat = rebuildCombatRound(nextCombatBase, action.roundId);
+    await this.combatRepository.upsert(nextCombat);
+    return { combat: nextCombat, revertedActionId: actionEventId };
   }
 
   async logDamage(combatId: string, input: CreateDamageEventInput): Promise<CombatRecord> {
@@ -568,7 +969,7 @@ export class CombatService {
 
   async logFocus(combatId: string, input: CreateFocusEventInput): Promise<CombatRecord> {
     const combat = await this.get(combatId);
-    const event = {
+    const event: FocusEvent = {
       id: randomUUID(),
       combatId,
       participantId: input.participantId,
@@ -624,7 +1025,7 @@ export class CombatService {
 
   async logCondition(combatId: string, input: CreateConditionEventInput): Promise<CombatRecord> {
     const combat = await this.get(combatId);
-    const event = {
+    const event: ConditionEvent = {
       id: randomUUID(),
       combatId,
       participantId: input.participantId,

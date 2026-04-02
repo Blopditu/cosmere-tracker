@@ -12,6 +12,10 @@ export class StageController {
     response.status(201).json(await this.stageService.createScene(String(request.params['sessionId']), request.body));
   };
 
+  importScenes = async (request: Request, response: Response) => {
+    response.status(201).json(await this.stageService.importScenes(String(request.params['sessionId']), request.body));
+  };
+
   updateScene = async (request: Request, response: Response) => {
     response.json(await this.stageService.updateScene(String(request.params['sceneId']), request.body));
   };

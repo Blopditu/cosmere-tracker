@@ -6,16 +6,21 @@ const ACTION_NAME_TO_KEY: Record<string, string> = {
   Brace: 'brace',
   Disengage: 'disengage',
   'Gain Advantage': 'gain-advantage',
-  'Interact / Use Skill': 'interact-skill',
+  Interact: 'interact',
+  'Interact / Use Skill': 'interact',
   Grapple: 'grapple',
   Ready: 'ready',
   Recover: 'recover',
   Shove: 'shove',
+  'Use a Skill': 'use-a-skill',
+  Banter: 'banter',
+  Drop: 'drop',
   Aid: 'aid',
   Dodge: 'dodge',
   'Reactive Strike': 'reactive-strike',
   'Avoid Danger': 'avoid-danger',
   Custom: 'custom',
+  'Custom Reaction': 'custom-reaction',
 };
 
 export function createIcon(

@@ -165,10 +165,16 @@ type Tone = 'default' | 'gold' | 'sapphire' | 'emerald' | 'ruby' | 'topaz' | 'mu
             <path d="m12 4.2 2.4 4.9 5.4.8-3.9 3.8.9 5.3-4.8-2.5-4.8 2.5.9-5.3-3.9-3.8 5.4-.8z"></path>
           </svg>
         }
-        @case ('interact-skill') {
+        @case ('interact') {
           <svg viewBox="0 0 24 24" aria-hidden="true">
             <circle cx="10" cy="10" r="4.1"></circle>
             <path d="m13.2 13.2 5 5"></path>
+          </svg>
+        }
+        @case ('use-a-skill') {
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M12 4.5 16.6 7v5L12 19.5 7.4 12V7z"></path>
+            <path d="m10.2 11.8 1.2 1.3 2.4-2.7"></path>
           </svg>
         }
         @case ('grapple') {
@@ -209,6 +215,18 @@ type Tone = 'default' | 'gold' | 'sapphire' | 'emerald' | 'ruby' | 'topaz' | 'mu
             <path d="M9.2 17.8c2.8-4.1 6.1-6.4 9.8-6.9"></path>
           </svg>
         }
+        @case ('banter') {
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M5.5 7.5h9a3.5 3.5 0 0 1 0 7H11l-3.8 3v-3H5.5a3.5 3.5 0 0 1 0-7Z"></path>
+          </svg>
+        }
+        @case ('drop') {
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M12 4.8v8.8"></path>
+            <path d="m8.8 10.8 3.2 3.2 3.2-3.2"></path>
+            <path d="M7 18.2h10"></path>
+          </svg>
+        }
         @case ('reactive-strike') {
           <svg viewBox="0 0 24 24" aria-hidden="true">
             <path d="M7.5 16.5 17 7"></path>
@@ -220,6 +238,13 @@ type Tone = 'default' | 'gold' | 'sapphire' | 'emerald' | 'ruby' | 'topaz' | 'mu
           <svg viewBox="0 0 24 24" aria-hidden="true">
             <path d="M12 4.5a7.5 7.5 0 1 0 7.5 7.5"></path>
             <path d="m14.5 6.1 3.4.1-.1 3.4"></path>
+          </svg>
+        }
+        @case ('custom-reaction') {
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M18 8.5A6.5 6.5 0 1 0 19 12"></path>
+            <path d="m18 5.6.1 3.8-3.7-.1"></path>
+            <path d="M12 8.8v6.4"></path>
           </svg>
         }
         @case ('skill') {

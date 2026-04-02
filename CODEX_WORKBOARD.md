@@ -1,6 +1,6 @@
 # Codex Workboard
 
-Last updated: 2026-04-01
+Last updated: 2026-04-02
 
 This file is the running tracker for work done with Codex. Keep it current so future sessions can pick up the right feature, redesign, or styling pass without re-discovering project context.
 
@@ -108,17 +108,44 @@ This file is the running tracker for work done with Codex. Keep it current so fu
 
 ## Immediate Queue
 
-- `[>]` Stage reuse across sessions
+- `[x]` Stage reuse across sessions
   Notes:
   Add a clean way to copy or reuse previously created stages instead of rebuilding them per session.
+  Files: `src/app/features/stage-manager/stage-manager-page.component.ts`, `src/app/features/stage-manager/stage-manager.store.ts`, `backend/src/services/stage.service.ts`, `backend/src/controllers/stage.controller.ts`, `backend/src/routes/stage.routes.ts`, `shared/domain/models.ts`, `src/styles.scss`.
+  Routes: `POST /api/sessions/:sessionId/stage-scenes/import`, `GET /api/sessions/:sessionId/stage-scenes`, `/gm/stage-manager/:sessionId`.
+  Completed: added atomic selected-scene import on the backend, inline Stage Manager import panel, duplicate warning and explicit confirm, append-at-end behavior, and first-imported-scene selection after success.
+  Remaining: run manual browser verification for source-session filtering, duplicate warning copy flow, and live-scene draft separation.
+  Next step: move to `Combat prep and setup improvements`.
 
-- `[>]` Combat prep and setup improvements
+- `[x]` Combat prep and setup improvements
   Notes:
   Reduce friction before initiative starts and make encounter setup faster.
+  Files: `shared/domain/models.ts`, `backend/src/services/combat.service.ts`, `backend/src/controllers/combat.controller.ts`, `backend/src/routes/combat.routes.ts`, `backend/src/services/session.service.ts`, `src/app/features/combat-tracker/combat.store.ts`, `src/app/features/combat-tracker/combat-setup-page.component.ts`, `src/app/features/combat-tracker/combat-tracker-page.component.ts`, `src/app/shared/roshar-icons.ts`, `src/app/shared/roshar-icon.component.ts`, `src/styles.scss`.
+  Routes: `POST /api/combats/:combatId/start`, `POST /api/combats/:combatId/rounds/current/commit`, `POST /api/combats/:combatId/rounds/current/advance`, `POST /api/combats/:combatId/rounds/current/reorder`, `POST /api/combats/:combatId/turns/:turnId/complete`, `POST /api/combats/:combatId/participants/:participantId/reaction/spend`, `POST /api/combats/:combatId/actions`.
+  Completed: removed setup-time Fast/Slow assignment, moved combat to dynamic current-phase rounds, added unresolved-pool commitment flow, explicit phase advance, manual queue reordering, turn completion, round-scoped reaction state, handbook-aligned combat catalog, and a reaction-capable command slab.
+  Remaining: manual browser verification for round start, unresolved reaction logging, phase advance gating, completed-turn reaction logging, and post-build smoke check once `ng build` can finish cleanly in the environment.
+  Next step: move to `Reusable custom enemies and NPC prep flow`.
 
-- `[>]` Reusable custom enemies and NPC prep flow
+- `[~]` Combat tracker UX redesign for fast resolution logging
+  Notes:
+  Rework the live combat screen around a left tactical rail, central battle board, and wide resolution board so Strike and Custom logging can happen without a narrow scrolling slab.
+  Files: `shared/domain/models.ts`, `backend/src/services/roll.service.ts`, `backend/src/services/combat.service.ts`, `backend/src/controllers/combat.controller.ts`, `backend/src/routes/combat.routes.ts`, `backend/src/services/session.service.ts`, `src/app/features/combat-tracker/combat.store.ts`, `src/app/features/combat-tracker/combat-tracker-page.component.ts`, `src/styles.scss`.
+  Routes: `PATCH /api/combats/:combatId/participants/:participantId/strike-preset`, `POST /api/combats/:combatId/actions`.
+  Completed: added per-combatant strike presets, structured opportunity/complication roll logging, damage formula/breakdown logging, left-rail phase planner, battle-board health/focus overview, and a wide tap-first resolution board for Strike, Custom, and Reaction flows.
+  Remaining: tighten the phase-advance UX so unresolved combatants are not mistaken for blockers, auto-handle exhausted open turns during phase advance, clarify PC versus NPC commitment handoff, finish the logger-first cockpit polish, and complete the manual browser verification for preset save/reuse flow, chronicle behavior, and overall desktop responsiveness.
+  In progress subtask: `Above-the-fold strike logger rewrite`.
+  In progress subtask: `Clarify NPC-side phase handoff and auto-select the next eligible side after phase advance`.
+  In progress subtask: `Add backend combat rule tests and a clearer next-turn handoff when a turn is exhausted`.
+  Next step: finish the logger-first combat pass, then decide whether combat UX is finally good enough to move on to reusable custom enemies and NPC prep flow.
+
+- `[~]` Reusable custom enemies and NPC prep flow
   Notes:
   Prioritize custom authoring that directly improves session preparation.
+  Files: `shared/domain/models.ts`, `backend/src/services/session.service.ts`, `backend/src/services/combat.service.ts`, `backend/src/services/session.service.spec.ts`, `backend/src/services/combat.service.spec.ts`, `src/app/shared/combat-preset-action-editor.component.ts`, `src/app/features/session/campaign-roster-page.component.ts`, `src/app/features/session/session-dashboard-page.component.ts`, `src/app/features/combat-tracker/combat-setup-page.component.ts`, `src/app/features/combat-tracker/combat-tracker-page.component.ts`, `src/app/features/combat-tracker/combat-resolution-board.component.ts`, `src/app/features/combat-tracker/combat-tracker.types.ts`, `src/styles.scss`.
+  Routes: existing session roster/session update routes, `POST /api/sessions/:sessionId/combats`, `POST /api/combats/:combatId/actions`.
+  Completed: added reusable enemy preset actions on campaign roster and session dashboard templates, copied preset actions into combat setup and combat participant records, added combat-local preset editing in setup only, switched the live logger to `Action` / `Reaction` tabs with handbook and preset action chips, and logged preset actions by their own names instead of forcing them through generic `Custom`.
+  Remaining: manual browser verification for roster editing, copied preset-action editing in combat setup, preset chip behavior in the live logger, and any follow-up UX cleanup after real table use.
+  Next step: finish the manual browser pass for preset actions, then move to `Player-safe reveal and notes improvements`.
 
 - `[>]` Player-safe reveal and notes improvements
   Notes:
@@ -161,6 +188,7 @@ This file is the running tracker for work done with Codex. Keep it current so fu
 
 - `2026-04-01`: Created `CODEX_WORKBOARD.md` as the shared tracker for future Codex sessions.
 - `2026-04-01`: Rewrote the workboard around phased roadmap planning. Session Ops is now the active phase, SQLite migration is next, and handbook import work moved to Deferred Later.
+- `2026-04-01`: Finished the combat rules-alignment milestone for Session Ops. Combat setup no longer preplans round one, live tracking now uses dynamic Fast/Slow phase commitment with round-scoped reaction state, and the combat action catalog now matches the handbook chapter more closely.
 
 ## Next Session Prompt Template
 

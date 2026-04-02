@@ -9,7 +9,8 @@
     "build": "ng build",
     "build:backend": "tsc -p backend/tsconfig.json",
     "watch": "ng build --watch --configuration development",
-    "test": "ng test"
+    "test": "ng test",
+    "test:backend": "vitest run"
   },
   "private": true,
   "packageManager": "npm@10.8.2",

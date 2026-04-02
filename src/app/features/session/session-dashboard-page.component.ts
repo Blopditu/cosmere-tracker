@@ -4,12 +4,13 @@ import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { ParticipantTemplate, PartyMember, SessionAnalytics, SessionDashboard } from '@shared/domain';
 import { SessionStoreService } from '../../core/session-store.service';
+import { CombatPresetActionEditorComponent } from '../../shared/combat-preset-action-editor.component';
 import { RosharIconComponent } from '../../shared/roshar-icon.component';
 import { CombatStore } from '../combat-tracker/combat.store';
 
 @Component({
   selector: 'app-session-dashboard-page',
-  imports: [CommonModule, FormsModule, RouterLink, RosharIconComponent],
+  imports: [CommonModule, FormsModule, RouterLink, RosharIconComponent, CombatPresetActionEditorComponent],
   template: `
     @if (dashboard()) {
       <section class="page-header session-dashboard-header card engraved-panel">
@@ -215,6 +216,12 @@ import { CombatStore } from '../combat-tracker/combat.store';
                       }
                     </div>
                     <button type="button" class="button-outline button-danger micro-button" (click)="confirmRosterRemoval('enemy', enemy.id, enemy.name)">Remove</button>
+                    <app-combat-preset-action-editor
+                      class="roster-preset-editor"
+                      [actions]="enemy.presetActions"
+                      title="Enemy preset actions"
+                      emptyLabel="No preset actions yet. Add reusable enemy actions here."
+                      (actionsChange)="updateEnemyPresetActions(enemy.id, $event)" />
                   </article>
                 }
               </div>
@@ -368,7 +375,7 @@ export class SessionDashboardPageComponent {
     this.dashboard.set(dashboard);
     this.analytics.set(analytics);
     this.partyDraft.set(dashboard.campaignPartyMembers.map((member) => ({ ...member })));
-    this.enemyDraft.set(dashboard.participantTemplates.map((enemy) => ({ ...enemy })));
+    this.enemyDraft.set(dashboard.participantTemplates.map((enemy) => ({ ...enemy, presetActions: [...enemy.presetActions] })));
     this.sessionPlayerIdsDraft.set([...dashboard.session.playerIds]);
   }
 
@@ -403,8 +410,15 @@ export class SessionDashboardPageComponent {
         role: '',
         maxHealth: undefined,
         maxFocus: undefined,
+        presetActions: [],
       },
     ]);
+  }
+
+  updateEnemyPresetActions(enemyId: string, presetActions: ParticipantTemplate['presetActions']): void {
+    this.enemyDraft.update((items) =>
+      items.map((enemy) => (enemy.id === enemyId ? { ...enemy, presetActions: [...presetActions] } : enemy)),
+    );
   }
 
   removeEnemyTemplate(id: string): void {
@@ -504,6 +518,7 @@ export class SessionDashboardPageComponent {
       maxHealth: entry.maxHealth ?? undefined,
       maxFocus: entry.maxFocus ?? undefined,
       imagePath: entry.imagePath || undefined,
+      presetActions: 'presetActions' in entry ? [...entry.presetActions] : [],
     };
   }
 }

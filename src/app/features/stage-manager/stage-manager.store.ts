@@ -1,5 +1,5 @@
 import { Injectable, signal } from '@angular/core';
-import { LiveStageState, StageScene } from '@shared/domain';
+import { ImportStageScenesInput, ImportStageScenesResult, LiveStageState, StageScene } from '@shared/domain';
 import { ApiService } from '../../core/api.service';
 import { AppRuntimeService } from '../../core/app-runtime.service';
 
@@ -41,6 +41,10 @@ export class StageManagerStore {
     await this.load(sessionId);
   }
 
+  async listSessionScenes(sessionId: string): Promise<StageScene[]> {
+    return this.api.get<StageScene[]>(`/api/sessions/${sessionId}/stage-scenes`);
+  }
+
   async update(sceneId: string, patch: Partial<StageScene>, sessionId: string): Promise<void> {
     await this.api.patch(`/api/stage-scenes/${sceneId}`, patch);
     await this.load(sessionId);
@@ -55,6 +59,12 @@ export class StageManagerStore {
     this.liveState.set(await this.api.put<LiveStageState>(`/api/sessions/${sessionId}/live-stage`, { liveSceneId }));
     const liveTitle = this.scenes().find((scene) => scene.id === liveSceneId)?.title ?? null;
     this.runtime.resetLiveScene(sessionId, liveTitle);
+  }
+
+  async importScenes(sessionId: string, input: ImportStageScenesInput): Promise<ImportStageScenesResult> {
+    const result = await this.api.post<ImportStageScenesResult>(`/api/sessions/${sessionId}/stage-scenes/import`, input);
+    await this.load(sessionId);
+    return result;
   }
 
   async uploadImage(sessionId: string, file: File): Promise<string> {

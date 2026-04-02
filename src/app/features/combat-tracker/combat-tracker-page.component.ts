@@ -1,34 +1,161 @@
 import { CommonModule } from '@angular/common';
-import { Component, DestroyRef, HostListener, computed, inject, signal } from '@angular/core';
-import { FormBuilder, ReactiveFormsModule } from '@angular/forms';
+import { ChangeDetectionStrategy, Component, DestroyRef, computed, inject, signal } from '@angular/core';
+import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, RouterLink } from '@angular/router';
-import { ACTION_CATALOG, CombatTurn, HitResult, TurnType } from '@shared/domain';
+import {
+  ACTION_CATALOG,
+  ActionCatalogItem,
+  ActionKind,
+  CombatPhase,
+  CombatPresetAction,
+  CombatRecord,
+  CombatRound,
+  CombatTurn,
+  HitResult,
+} from '@shared/domain';
 import { RosharIconComponent } from '../../shared/roshar-icon.component';
 import { actionIcon, resultIcon } from '../../shared/roshar-icons';
+import { CombatParticipantRowComponent } from './combat-participant-row.component';
+import { CombatResolutionBoardComponent } from './combat-resolution-board.component';
 import { CombatStore } from './combat.store';
+import {
+  BattleLane,
+  ChronicleEntry,
+  CombatActionForm,
+  CombatConditionForm,
+  PhaseGroup,
+  ResolutionActionChoice,
+  ResolutionActionGroup,
+  ResolutionMode,
+  ResolutionModeOption,
+  ResolutionSupportText,
+  ResolutionTargetChip,
+  ResultChip,
+} from './combat-tracker.types';
+
+const COMBAT_PHASES: CombatPhase[] = ['fast-pc', 'fast-npc', 'slow-pc', 'slow-npc'];
+const PC_PHASES: CombatPhase[] = ['fast-pc', 'slow-pc'];
+const QUICK_D20_VALUES = Array.from({ length: 20 }, (_, index) => index + 1);
+const QUICK_COUNT_VALUES = [0, 1, 2, 3] as const;
+const DEFAULT_EXPANDED_PHASES: CombatPhase[] = [];
+const DEFAULT_STRIKE_ACTION_KEY = 'strike';
+const DEFAULT_CUSTOM_ACTION_KEY = 'custom';
+const DEFAULT_REACTION_ACTION_KEY = 'custom-reaction';
+const ACTION_CHOICE_PREFIX = 'catalog:';
+const PRESET_CHOICE_PREFIX = 'preset:';
+const QUICK_DAMAGE_REASON = 'Quick battle-board damage';
+const QUICK_HEALING_REASON = 'Quick battle-board healing';
+const MANUAL_FOCUS_REASON = 'Manual focus adjustment';
+const PLAYER_SIDE = 'pc';
+const CUSTOM_ACTION_KEYS = new Set([DEFAULT_CUSTOM_ACTION_KEY, DEFAULT_REACTION_ACTION_KEY]);
+const WAITING_FOR_FAST_NPC_LABEL = 'Will act in Fast NPC';
+const WAITING_FOR_SLOW_NPC_LABEL = 'Will act in Slow NPC';
+const WAITING_FOR_SLOW_PC_LABEL = 'Will act in Slow PC';
+const PHASE_PASSED_THIS_ROUND_LABEL = 'Phase already passed this round';
+const CAN_COMMIT_NOW_LABEL = 'Can commit now';
+const TURN_ALREADY_COMMITTED_LABEL = 'Turn already committed';
+
+const RESULT_CHIPS: ResultChip[] = [
+  { value: 'hit', label: 'Hit', tone: 'emerald' },
+  { value: 'miss', label: 'Miss', tone: 'ruby' },
+  { value: 'graze', label: 'Graze', tone: 'topaz' },
+  { value: 'criticalHit', label: 'Critical Hit', tone: 'topaz' },
+  { value: 'criticalMiss', label: 'Critical Miss', tone: 'ruby' },
+  { value: 'support', label: 'Support', tone: 'sapphire' },
+];
+
+const RESOLUTION_MODES: ResolutionModeOption[] = [
+  { key: 'action', label: 'Action', description: 'Use handbook actions, enemy presets, or the generic custom action.' },
+  { key: 'reaction', label: 'Reaction', description: 'Use handbook reactions, preset reactions, or Custom Reaction.' },
+];
+
+const COMMON_CONDITIONS = ['Dazed', 'Prone', 'Marked', 'Inspired', 'Bleeding'];
+
+function sortCatalogWithPriority(items: ActionCatalogItem[], priorityKey: string): ActionCatalogItem[] {
+  return [...items].sort((left, right) => {
+    if (left.key === priorityKey) {
+      return -1;
+    }
+    if (right.key === priorityKey) {
+      return 1;
+    }
+    return left.name.localeCompare(right.name);
+  });
+}
+
+function buildCatalogChoice(item: ActionCatalogItem): ResolutionActionChoice {
+  return {
+    id: `${ACTION_CHOICE_PREFIX}${item.key}`,
+    label: item.name,
+    actionType: item.key,
+    actionKind: item.type,
+    requiresTarget: item.requiresTarget,
+    requiresRoll: item.requiresRoll,
+    supportsDamage: item.supportsDamage,
+    defaultActionCost: item.defaultActionCost,
+    defaultFocusCost: item.defaultFocusCost,
+    tags: item.tags,
+    warnOncePerCombat: item.warnOncePerCombat,
+    repeatablePerTurn: item.repeatablePerTurn,
+    variableActionCost: item.variableActionCost,
+    helperText: item.helperText,
+    source: 'catalog',
+  };
+}
+
+function buildPresetChoice(action: CombatPresetAction): ResolutionActionChoice {
+  return {
+    id: `${PRESET_CHOICE_PREFIX}${action.id}`,
+    label: action.name,
+    actionType: action.name,
+    actionKind: action.kind,
+    presetActionId: action.id,
+    requiresTarget: action.requiresTarget,
+    requiresRoll: action.requiresRoll,
+    supportsDamage: action.supportsDamage,
+    defaultActionCost: action.actionCost,
+    defaultFocusCost: action.focusCost,
+    defaultModifier: action.defaultModifier,
+    defaultDamageFormula: action.defaultDamageFormula,
+    tags: [],
+    source: 'preset',
+  };
+}
+
+function isSupportTargetAction(action: ResolutionActionChoice | null): boolean {
+  return Boolean(action?.tags.includes('support') && !action.tags.includes('attack'));
+}
 
 @Component({
   selector: 'app-combat-tracker-page',
-  imports: [CommonModule, ReactiveFormsModule, RouterLink, RosharIconComponent],
+  imports: [
+    CommonModule,
+    ReactiveFormsModule,
+    RouterLink,
+    RosharIconComponent,
+    CombatParticipantRowComponent,
+    CombatResolutionBoardComponent,
+  ],
+  changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
-    @if (store.combat()) {
+    @if (store.combat(); as combat) {
       <section class="page-header combat-command-bar card engraved-panel">
         <div class="combat-command-copy">
           <p class="eyebrow">Combat tracker</p>
-          <h2>{{ store.combat()!.title }}</h2>
-          <p>{{ store.combat()!.status }} combat with {{ store.combat()!.participants.length }} participants. Keep the board live and the command slab focused on the current turn.</p>
+          <h2>{{ combat.title }}</h2>
+          <p>Keep phase commitment in the rail, keep the battlefield visible in the middle, and resolve strikes or custom actions from one wide board without hunting through a narrow form.</p>
         </div>
         <div class="combat-command-side">
           <div class="combat-command-stats">
             <article class="route-stat sapphire">
               <app-roshar-icon key="sessions" label="Participants" tone="sapphire" [size]="18" />
               <span class="stat-label">Participants</span>
-              <strong>{{ store.combat()!.participants.length }}</strong>
+              <strong>{{ combat.participants.length }}</strong>
             </article>
             <article class="route-stat topaz">
               <app-roshar-icon key="fast" label="Round" tone="topaz" [size]="18" />
               <span class="stat-label">Round</span>
-              <strong>{{ store.combat()!.currentRoundNumber || 1 }}</strong>
+              <strong>{{ currentRound()?.roundNumber || combat.currentRoundNumber || 0 }}</strong>
             </article>
             <article class="route-stat ruby">
               <app-roshar-icon key="chronicle" label="Entries" tone="ruby" [size]="18" />
@@ -37,397 +164,369 @@ import { CombatStore } from './combat.store';
             </article>
           </div>
           <div class="button-row combat-command-actions">
-            <button type="button" (click)="startCombat()">Start combat</button>
-            <button type="button" class="button-outline" (click)="openRoundPlanner()">Next round</button>
-            <button type="button" class="button-outline" (click)="finishCombat()">Finish combat</button>
-            <a [routerLink]="['/sessions', store.combat()!.sessionId, 'combats', store.combat()!.id, 'summary']" class="button-outline">Summary</a>
+            @if (combat.status === 'planned') {
+              <button type="button" (click)="startCombat()">Start combat</button>
+            } @else {
+              <button type="button" [disabled]="!canAdvancePhase()" (click)="advancePhase()">
+                {{ currentRound()?.currentPhase === 'slow-npc' ? 'Next round' : 'Advance phase' }}
+              </button>
+            }
+            <button type="button" class="button-outline" (click)="chronicleOpen.set(!chronicleOpen())">
+              {{ chronicleOpen() ? 'Hide chronicle' : 'Show chronicle' }}
+            </button>
+            <button type="button" class="button-outline" [disabled]="combat.status !== 'active'" (click)="finishCombat()">Finish combat</button>
+            <a [routerLink]="['/sessions', combat.sessionId, 'combats', combat.id, 'summary']" class="button-outline">Summary</a>
           </div>
         </div>
       </section>
 
-      <div class="combat-layout tactical-war-table">
-        <aside class="card engraved-panel combat-sidebar" data-tour="combat-participants">
+      <div class="combat-layout combat-live-grid">
+        <aside class="card engraved-panel combat-sidebar tactical-rail" data-tour="combat-turn-groups">
           <div class="card-header">
             <div class="section-heading">
-              <app-roshar-icon key="sessions" label="Participants" tone="sapphire" [size]="18" />
-              <h3>Unit ledger</h3>
+              <app-roshar-icon key="combat" label="Phase rail" tone="ruby" [size]="18" />
+              <h3>Phase rail</h3>
             </div>
-            <span class="pill">Round {{ store.combat()!.currentRoundNumber || 1 }}</span>
-          </div>
-          <div class="list-stack">
-            @for (participant of store.combat()!.participants; track participant.id) {
-              <article class="participant-ledger" [class.active]="selectedParticipantId() === participant.id" [class.enemy-ledger]="participant.side === 'enemy' || participant.side === 'npc'">
-                <button class="list-item-button participant-ledger-button" type="button" (click)="selectedParticipantId.set(participant.id)">
-                  <div>
-                    <strong class="event-line">
-                      <app-roshar-icon key="sessions" [label]="participant.name" [tone]="participantTone(participant.side)" [size]="16" />
-                      {{ participant.name }}
-                    </strong>
-                    <small>{{ participant.side }}</small>
-                  </div>
-                  <div class="participant-resources">
-                    <span class="tag-chip">
-                      <app-roshar-icon key="health" label="Health" tone="ruby" [size]="14" />
-                      {{ participant.currentHealth ?? '-' }}
-                    </span>
-                    <span class="tag-chip">
-                      <app-roshar-icon key="focus" label="Focus" tone="topaz" [size]="14" />
-                      {{ participant.currentFocus }}
-                    </span>
-                  </div>
-                </button>
-                <div class="mini-adjusters sidebar-resource-rail">
-                  <button type="button" class="button-outline micro-button" (click)="adjustHealth(participant.id, -1, 'Quick sidebar damage')">-1 HP</button>
-                  <button type="button" class="button-outline micro-button" (click)="adjustFocus(participant.id, -1)">-1 F</button>
-                </div>
-              </article>
+            @if (currentRound()) {
+              <span class="pill">Round {{ currentRound()!.roundNumber }}</span>
             }
           </div>
-        </aside>
 
-        <section class="card engraved-panel combat-board" data-tour="combat-turn-groups">
-          <div class="card-header">
-            <div class="section-heading">
-              <app-roshar-icon key="combat" label="Turn groups" tone="ruby" [size]="18" />
-              <h3>Tactical board</h3>
-            </div>
-            <span class="pill">{{ store.combat()!.turns.length }} turns</span>
-          </div>
-          <div class="turn-legend">
-            <span class="tag-chip">
-              <app-roshar-icon key="fast" label="Fast turn" tone="topaz" [size]="14" />
-              Fast turn
-            </span>
-            <span class="tag-chip">
-              <app-roshar-icon key="slow" label="Slow turn" tone="sapphire" [size]="14" />
-              Slow turn
-            </span>
-            <span class="tag-chip">
-              <app-roshar-icon key="reaction" label="Reaction" tone="emerald" [size]="14" />
-              Reaction ready
-            </span>
-          </div>
-          <div class="turn-group-grid">
-            @for (group of groupedRounds(); track group.label) {
-              <section class="inset-panel tactical-group">
+          @if (combat.status === 'planned') {
+            <article class="empty-card">Start combat to create round 1 and begin live Fast and Slow commitment.</article>
+          } @else if (currentRound(); as round) {
+            <section class="inset-panel phase-status-panel">
+              <div>
+                <p class="eyebrow">Current phase</p>
+                <h3>{{ phaseLabel(round.currentPhase) }}</h3>
+                <p class="muted">{{ advancePhaseGuidance() }}</p>
+              </div>
+              <div class="phase-status-side">
+                <span class="tag-chip" [class.emphasis-pill]="canAdvancePhase()">{{ advanceStatusLabel() }}</span>
+                <small class="muted">
+                  Ready now {{ readyParticipants().length }} · Later {{ laterParticipants().length + passedParticipants().length }}
+                </small>
+                <button type="button" class="button-outline micro-button" [disabled]="!canAdvancePhase()" (click)="advancePhase()">
+                  {{ round.currentPhase === 'slow-npc' ? 'Open next round' : 'Advance phase' }}
+                </button>
+              </div>
+            </section>
+
+            <section class="planner-block">
+              <div class="card-header compact-card-header">
                 <div class="section-heading">
-                  <app-roshar-icon [key]="groupIcon(group.label)" [label]="group.label" [tone]="groupTone(group.label)" [size]="16" />
-                  <h3>{{ group.label }}</h3>
+                  <app-roshar-icon key="sessions" label="Ready now" tone="sapphire" [size]="16" />
+                  <h3>Ready now</h3>
                 </div>
-                <div class="list-stack">
-                  @for (turn of group.turns; track turn.id) {
-                    <button
-                      class="list-item-button tactical-turn"
-                      type="button"
-                      [class.active]="selectedTurnId() === turn.id"
-                      [class.turn-complete]="turn.actionsUsed >= turn.actionsAvailable"
-                      [class.turn-partial]="turn.actionsUsed > 0 && turn.actionsUsed < turn.actionsAvailable"
-                      (click)="selectTurn(turn)"
-                    >
+                <span class="pill">{{ readyParticipants().length }}</span>
+              </div>
+
+              <div class="round-planner-list unresolved-list compact-unresolved-list">
+                @for (entry of readyParticipants(); track entry.participant.id) {
+                  <article class="round-planner-row unresolved-entry compact-unresolved-entry" [class.active]="selectedParticipantId() === entry.participant.id">
+                    <button type="button" class="list-item-button unresolved-entry-button" (click)="selectParticipant(entry.participant.id)">
                       <div>
-                        <strong>{{ participantName(turn.participantId) }}</strong>
-                        <small class="event-line">
-                          <app-roshar-icon [key]="turn.turnType === 'fast' ? 'fast' : 'slow'" [label]="turn.turnType" [tone]="turn.turnType === 'fast' ? 'topaz' : 'sapphire'" [size]="14" />
-                          {{ turn.turnType }} turn
-                        </small>
+                        <strong class="event-line">
+                          <app-roshar-icon key="sessions" [label]="entry.participant.name" [tone]="participantTone(entry.participant.side)" [size]="15" />
+                          {{ entry.participant.name }}
+                        </strong>
+                        <small>{{ commitStatusLabel(entry.participant.id) }}</small>
                       </div>
-                      <div class="turn-meta">
-                        <span>{{ turn.actionsUsed }}/{{ turn.actionsAvailable }} actions</span>
-                        <span class="tag-chip">
-                          <app-roshar-icon key="reaction" label="Reaction" [tone]="turn.reactionUsed ? 'ruby' : 'emerald'" [size]="14" />
-                          {{ turn.reactionUsed ? 'Spent' : 'Ready' }}
-                        </span>
-                      </div>
+                      <span class="tag-chip">
+                        <app-roshar-icon key="reaction" label="Reaction" [tone]="entry.state.reactionAvailable ? 'emerald' : 'ruby'" [size]="12" />
+                        {{ entry.state.reactionAvailable ? 'Ready' : 'Spent' }}
+                      </span>
                     </button>
+                    <button type="button" class="button-outline micro-button" (click)="commitParticipant(entry.participant.id)">
+                      {{ commitLabel(round.currentPhase) }}
+                    </button>
+                  </article>
+                } @empty {
+                  <article class="empty-card">No one can commit in this phase right now.</article>
+                }
+              </div>
+            </section>
+
+            @if (laterParticipants().length || passedParticipants().length) {
+              <section class="planner-block">
+                <div class="card-header compact-card-header">
+                  <div class="section-heading">
+                    <app-roshar-icon key="slow" label="Later this round" tone="topaz" [size]="16" />
+                    <h3>Later this round</h3>
+                  </div>
+                  <span class="pill">{{ laterParticipants().length + passedParticipants().length }}</span>
+                </div>
+
+                <div class="round-planner-list unresolved-list compact-unresolved-list">
+                  @for (entry of laterParticipants(); track entry.participant.id) {
+                    <article class="round-planner-row unresolved-entry compact-unresolved-entry" [class.active]="selectedParticipantId() === entry.participant.id">
+                      <button type="button" class="list-item-button unresolved-entry-button" (click)="selectParticipant(entry.participant.id)">
+                        <div>
+                          <strong class="event-line">
+                            <app-roshar-icon key="sessions" [label]="entry.participant.name" [tone]="participantTone(entry.participant.side)" [size]="15" />
+                            {{ entry.participant.name }}
+                          </strong>
+                          <small>{{ commitStatusLabel(entry.participant.id) }}</small>
+                        </div>
+                        <span class="tag-chip">
+                          <app-roshar-icon key="reaction" label="Reaction" [tone]="entry.state.reactionAvailable ? 'emerald' : 'ruby'" [size]="12" />
+                          {{ entry.state.reactionAvailable ? 'Ready' : 'Spent' }}
+                        </span>
+                      </button>
+                    </article>
                   }
-                </div>
-              </section>
-            }
-          </div>
-        </section>
 
-        <div class="combat-command-column">
-          <section class="card engraved-panel combat-console" data-tour="combat-action-logger">
-            <div class="card-header">
-              <div class="section-heading">
-                <app-roshar-icon key="combat" label="Quick action logger" tone="gold" [size]="18" />
-                <h3>Command slab</h3>
-              </div>
-              <div class="ledger-meta">
-                @if (roundStatus()) {
-                  <span class="pill emphasis-pill">{{ roundStatus() }}</span>
-                }
-                <span class="pill">{{ selectedTurn()?.turnType || 'Select turn' }}</span>
-              </div>
-            </div>
-
-            @if (selectedTurn()) {
-              <div class="quick-action-ribbon">
-                @for (item of pinnedActions(); track item!.key; let index = $index) {
-                  <button type="button" class="button-outline shell-shortcut" [class.active]="actionForm.controls.actionType.value === item!.key" (click)="selectPinnedAction(item!.key)">
-                    <app-roshar-icon [key]="item!.key" [label]="item!.name" tone="gold" [size]="15" />
-                    <span>{{ index + 1 }}. {{ item!.name }}</span>
-                  </button>
-                }
-              </div>
-              <div class="hotkey-hints">
-                <span class="tag-chip">1-6 action</span>
-                <span class="tag-chip">Enter log</span>
-                <span class="tag-chip">R reaction</span>
-                <span class="tag-chip">N round plan</span>
-              </div>
-
-              <div class="selected-turn-summary">
-                <div>
-                  <span class="stat-label">Selected combatant</span>
-                  <strong class="event-line">
-                    <app-roshar-icon key="sessions" [label]="selectedParticipant()?.name || 'Selected combatant'" [tone]="selectedParticipant() ? participantTone(selectedParticipant()!.side) : 'muted'" [size]="16" />
-                    {{ selectedParticipant()?.name }}
-                  </strong>
-                </div>
-                <div>
-                  <span class="stat-label">Conditions</span>
-                  <p class="event-line">
-                    <app-roshar-icon key="condition" label="Conditions" tone="emerald" [size]="14" />
-                    {{ selectedParticipant()?.conditions?.join(', ') || 'None active' }}
-                  </p>
-                  <div class="compact-button-row">
-                    @for (condition of selectedParticipant()?.conditions || []; track condition) {
-                      <button type="button" class="button-outline micro-button" (click)="removeCondition(selectedParticipant()!.id, condition)">{{ condition }} ×</button>
-                    }
-                  </div>
-                </div>
-                <div>
-                  <span class="stat-label">Resources</span>
-                  <p class="event-line">
-                    <app-roshar-icon key="health" label="Health" tone="ruby" [size]="14" />
-                    {{ selectedParticipant()?.currentHealth ?? '-' }} HP
-                    <app-roshar-icon key="focus" label="Focus" tone="topaz" [size]="14" />
-                    {{ selectedParticipant()?.currentFocus }} focus
-                  </p>
-                  <div class="resource-rail">
-                    <button type="button" class="button-outline micro-button" (click)="adjustHealth(selectedParticipant()!.id, -5)">-5 HP</button>
-                    <button type="button" class="button-outline micro-button" (click)="adjustHealth(selectedParticipant()!.id, -1)">-1 HP</button>
-                    <button type="button" class="button-outline micro-button" (click)="adjustHealth(selectedParticipant()!.id, 1, 'Healing')">+1 HP</button>
-                    <button type="button" class="button-outline micro-button" (click)="adjustHealth(selectedParticipant()!.id, 5, 'Healing')">+5 HP</button>
-                    <button type="button" class="button-outline micro-button" (click)="adjustFocus(selectedParticipant()!.id, -1)">-1 Focus</button>
-                    <button type="button" class="button-outline micro-button" (click)="adjustFocus(selectedParticipant()!.id, 1)">+1 Focus</button>
-                  </div>
-                </div>
-              </div>
-
-              @if (selectedEnemySheet()) {
-                <section class="enemy-sheet-panel inset-panel">
-                  <div class="card-header compact-card-header">
-                    <div class="section-heading">
-                      <app-roshar-icon key="chronicle" label="Enemy sheet" tone="topaz" [size]="18" />
-                      <h3>{{ selectedEnemySheet()!.title }} sheet</h3>
-                    </div>
-                    <button type="button" class="button-outline micro-button" (click)="openEnemySheet()">Open full image</button>
-                  </div>
-                  <button type="button" class="enemy-sheet-preview" [style.background-image]="'url(' + selectedEnemySheet()!.imagePath + ')'" (click)="openEnemySheet()"></button>
-                </section>
-              }
-
-              <div class="condition-manager">
-                <label class="compact-field">
-                  <span>Add condition</span>
-                  <input [formControl]="conditionForm.controls.conditionName" type="text" placeholder="Dazed, Prone, Marked..." />
-                </label>
-                <button type="button" class="button-outline shell-shortcut" (click)="addCondition()">
-                  <app-roshar-icon key="condition" label="Add condition" tone="emerald" [size]="15" />
-                  <span>Add condition</span>
-                </button>
-                <div class="condition-quick-chips">
-                  @for (condition of commonConditions; track condition) {
-                    <button type="button" class="button-outline micro-button" (click)="setConditionName(condition)">{{ condition }}</button>
-                  }
-                </div>
-              </div>
-
-              <div class="action-toggle-row">
-                <button type="button" class="button-outline micro-button" [class.active]="actionForm.controls.useTarget.value" [disabled]="selectedActionMeta()?.requiresTarget" (click)="toggleField('useTarget')">
-                  {{ selectedActionMeta()?.requiresTarget ? 'Target required' : actionForm.controls.useTarget.value ? 'Target on' : 'Add target' }}
-                </button>
-                <button type="button" class="button-outline micro-button" [class.active]="actionForm.controls.useRoll.value" [disabled]="selectedActionMeta()?.requiresRoll" (click)="toggleField('useRoll')">
-                  {{ selectedActionMeta()?.requiresRoll ? 'Test required' : actionForm.controls.useRoll.value ? 'Test on' : 'Enable test' }}
-                </button>
-                <button type="button" class="button-outline micro-button" [class.active]="actionForm.controls.trackDamage.value" [disabled]="selectedActionMeta()?.supportsDamage" (click)="toggleField('trackDamage')">
-                  {{ selectedActionMeta()?.supportsDamage ? 'Damage required' : actionForm.controls.trackDamage.value ? 'Damage on' : 'Track damage' }}
-                </button>
-                <span class="tag-chip">{{ selectedActionMeta()?.defaultFocusCost || 0 }} default focus</span>
-              </div>
-
-              <div class="action-focus-card">
-                <div>
-                  <span class="stat-label">Selected action</span>
-                  <strong class="event-line">
-                    <app-roshar-icon [key]="selectedActionDescriptor().key" [label]="selectedActionDescriptor().label" [tone]="selectedActionDescriptor().tone || 'gold'" [size]="18" />
-                    {{ selectedActionDescriptor().label }}
-                  </strong>
-                </div>
-                <div class="action-focus-meta">
-                  <span class="tag-chip">{{ selectedActionMeta()?.type || 'action' }}</span>
-                  <span class="tag-chip">{{ selectedActionMeta()?.defaultActionCost || 0 }} action cost</span>
-                  <span class="tag-chip">{{ selectedActionMeta()?.defaultFocusCost || 0 }} focus</span>
-                </div>
-              </div>
-
-              <form class="form-grid combat-action-form" [formGroup]="actionForm" (ngSubmit)="logAction()">
-                <label>
-                  <span>Action</span>
-                  <select formControlName="actionType">
-                    @for (item of actionCatalog; track item.key) {
-                      <option [value]="item.key">{{ item.name }}</option>
-                    }
-                  </select>
-                </label>
-                @if (showTargetField()) {
-                  <label>
-                    <span>Target</span>
-                    <select formControlName="targetId">
-                      <option value="">No target</option>
-                      @for (participant of availableTargets(); track participant.id) {
-                        <option [value]="participant.id">{{ participant.name }}</option>
-                      }
-                    </select>
-                  </label>
-                }
-                <label>
-                  <span>Result</span>
-                  <select formControlName="hitResult">
-                    <option value="neutral">Neutral</option>
-                    <option value="hit">Hit</option>
-                    <option value="graze">Graze</option>
-                    <option value="miss">Miss</option>
-                    <option value="criticalHit">Critical hit</option>
-                    <option value="criticalMiss">Critical miss</option>
-                    <option value="support">Support</option>
-                  </select>
-                </label>
-                <label>
-                  <span>Focus cost</span>
-                  <input formControlName="focusCost" type="number" min="0" />
-                </label>
-                @if (showRollField()) {
-                  <label>
-                    <span>d20 test</span>
-                    <input formControlName="rawD20" type="number" min="1" max="20" />
-                  </label>
-                  <label>
-                    <span>Modifier</span>
-                    <input formControlName="modifier" type="number" />
-                  </label>
-                }
-                @if (showDamageField()) {
-                  <label>
-                    <span>Damage</span>
-                    <input formControlName="damageAmount" type="number" min="0" />
-                  </label>
-                }
-                @if (showRollField()) {
-                  <div class="full-width exact-d20-panel">
-                    <div class="section-heading">
-                      <app-roshar-icon key="rolls" label="Exact d20 result" tone="topaz" [size]="16" />
-                      <h3>Exact d20 result</h3>
-                    </div>
-                    <p>Enter the exact raw d20, or tap the quick grid during fast play.</p>
-                    <div class="exact-d20-row compact-d20-grid">
-                      @for (value of quickD20Values; track value) {
-                        <button type="button" class="button-outline micro-button" [class.active]="actionForm.controls.rawD20.value === value" [class.edge-roll]="value === 1 || value === 20" (click)="setActionRawD20(value)">
-                          {{ value }}
-                        </button>
-                      }
-                    </div>
-                  </div>
-                }
-                <label class="full-width">
-                  <span>Note</span>
-                  <textarea formControlName="note" rows="2"></textarea>
-                </label>
-                <div class="button-row full-width">
-                  <button type="submit">Log action</button>
-                  <button type="button" class="button-outline" (click)="markReaction()">Use reaction</button>
-                </div>
-              </form>
-            } @else {
-              <article class="empty-card">Select a turn to log actions.</article>
-            }
-          </section>
-
-          <section class="card engraved-panel chronicle-feed combat-feed-panel" data-tour="combat-feed">
-            <div class="card-header">
-              <div class="section-heading">
-                <app-roshar-icon key="chronicle" label="Combat event feed" tone="topaz" [size]="18" />
-                <h3>Battle chronicle</h3>
-              </div>
-              <span class="pill">{{ chronicleEntries().length }}</span>
-            </div>
-            <div class="list-stack">
-              @for (entry of chronicleEntries(); track entry.id) {
-                <article class="timeline-item chronicle-entry" [class.resource-entry]="entry.category !== 'action'">
-                  <strong class="event-line">
-                    <app-roshar-icon [key]="entry.icon.key" [label]="entry.icon.label" [tone]="entryTone(entry.icon.tone)" [size]="16" />
-                    {{ entry.title }}
-                  </strong>
-                  <p class="event-line">
-                    @if (entry.result) {
-                      <app-roshar-icon [key]="entry.result.key" [label]="entry.result.label" [tone]="entryTone(entry.result.tone)" [size]="14" />
-                    }
-                    {{ entry.detail }}
-                  </p>
-                  <small>{{ entry.timestamp | date: 'short' }} • {{ entry.note }}</small>
-                  @if (entry.category === 'action') {
-                    <div class="compact-button-row chronicle-actions">
-                      <button type="button" class="button-outline micro-button" (click)="revertAction(entry.id)">Undo</button>
-                    </div>
-                  }
-                </article>
-              } @empty {
-                <article class="empty-card">No actions in the chronicle yet. Select a turn and log the first move to wake the board.</article>
-              }
-            </div>
-          </section>
-        </div>
-      </div>
-
-      @if (roundPlannerOpen()) {
-        <div class="confirm-modal-backdrop" (click)="closeRoundPlanner()"></div>
-        <section class="confirm-modal card engraved-panel round-planner-modal">
-          <div class="card-header">
-            <div class="section-heading">
-              <app-roshar-icon key="fast" label="Round planner" tone="topaz" [size]="18" />
-              <h3>Plan next round</h3>
-            </div>
-          </div>
-          <p class="muted">Choose Fast or Slow for each combatant before creating the next round.</p>
-          <div class="list-stack">
-            @for (group of plannerGroups(); track group.label) {
-              <section class="inset-panel">
-                <div class="section-heading">
-                  <app-roshar-icon [key]="group.tone === 'ruby' ? 'combat' : 'sessions'" [label]="group.label" [tone]="group.tone" [size]="16" />
-                  <h3>{{ group.label }}</h3>
-                </div>
-                <div class="round-planner-list">
-                  @for (participant of group.entries; track participant.id) {
-                    <article class="round-planner-row">
-                      <strong>{{ participant.name }}</strong>
-                      <div class="tempo-toggle">
-                        <button type="button" class="button-outline micro-button" [class.active]="plannerTempo(participant.id) === 'fast'" (click)="setPlannerTempo(participant.id, 'fast')">Fast</button>
-                        <button type="button" class="button-outline micro-button" [class.active]="plannerTempo(participant.id) === 'slow'" (click)="setPlannerTempo(participant.id, 'slow')">Slow</button>
-                      </div>
+                  @for (entry of passedParticipants(); track entry.participant.id) {
+                    <article class="round-planner-row unresolved-entry compact-unresolved-entry" [class.active]="selectedParticipantId() === entry.participant.id">
+                      <button type="button" class="list-item-button unresolved-entry-button" (click)="selectParticipant(entry.participant.id)">
+                        <div>
+                          <strong class="event-line">
+                            <app-roshar-icon key="sessions" [label]="entry.participant.name" [tone]="participantTone(entry.participant.side)" [size]="15" />
+                            {{ entry.participant.name }}
+                          </strong>
+                          <small>{{ commitStatusLabel(entry.participant.id) }}</small>
+                        </div>
+                        <span class="tag-chip">
+                          <app-roshar-icon key="reaction" label="Reaction" [tone]="entry.state.reactionAvailable ? 'emerald' : 'ruby'" [size]="12" />
+                          {{ entry.state.reactionAvailable ? 'Ready' : 'Spent' }}
+                        </span>
+                      </button>
                     </article>
                   }
                 </div>
               </section>
             }
-          </div>
-          <div class="button-row">
-            <button type="button" class="button-outline" (click)="closeRoundPlanner()">Cancel</button>
-            <button type="button" (click)="createNextRound()">Create next round</button>
-          </div>
+
+            @if (activePhaseGroup(); as activeGroup) {
+              <section class="planner-block">
+                <div class="card-header compact-card-header">
+                  <div class="section-heading">
+                    <app-roshar-icon [key]="phaseIcon(activeGroup.phase)" [label]="activeGroup.label" [tone]="phaseTone(activeGroup.phase)" [size]="15" />
+                    <h3>{{ activeGroup.label }}</h3>
+                  </div>
+                  <span class="pill">{{ activeGroup.turns.length }}</span>
+                </div>
+
+                <div class="list-stack planner-turn-stack">
+                  @for (turn of activeGroup.turns; track turn.id; let index = $index) {
+                    <article class="planner-turn-card" [class.active]="selectedTurnId() === turn.id" [class.turn-complete]="turn.status === 'complete'">
+                      <button type="button" class="list-item-button planner-turn-button" (click)="selectTurn(turn)">
+                        <div>
+                          <strong>{{ participantName(turn.participantId) }}</strong>
+                          <small>{{ turn.turnType }} turn · {{ turn.status }}</small>
+                        </div>
+                        <span>{{ turn.actionsUsed }}/{{ turn.actionsAvailable }}</span>
+                      </button>
+                      <div class="mini-adjusters">
+                        <button type="button" class="button-outline micro-button" [disabled]="index === 0" (click)="moveTurn(activeGroup.phase, turn.id, -1)">Up</button>
+                        <button type="button" class="button-outline micro-button" [disabled]="index === activeGroup.turns.length - 1" (click)="moveTurn(activeGroup.phase, turn.id, 1)">Down</button>
+                      </div>
+                    </article>
+                  } @empty {
+                    <article class="empty-card">No turns committed in the active queue yet.</article>
+                  }
+                </div>
+              </section>
+            }
+
+            <section class="planner-block">
+              <div class="card-header compact-card-header">
+                <div class="section-heading">
+                  <app-roshar-icon key="slow" label="Other queues" tone="topaz" [size]="15" />
+                  <h3>Other queues</h3>
+                </div>
+              </div>
+
+              <div class="phase-summary-list">
+                @for (group of inactivePhaseGroups(); track group.phase) {
+                  <section class="inset-panel phase-summary-card">
+                    <button type="button" class="phase-summary-toggle" (click)="togglePhaseGroup(group.phase)">
+                      <div>
+                        <strong>{{ group.label }}</strong>
+                        <small>{{ phaseGroupSummary(group) }}</small>
+                      </div>
+                      <div class="phase-summary-meta">
+                        <span class="tag-chip">{{ group.turns.length }}</span>
+                        <span class="tag-chip">{{ isPhaseGroupExpanded(group.phase) ? 'Hide' : 'Show' }}</span>
+                      </div>
+                    </button>
+
+                    @if (isPhaseGroupExpanded(group.phase)) {
+                      <div class="list-stack planner-turn-stack compact-phase-stack">
+                        @for (turn of group.turns; track turn.id) {
+                          <article class="planner-turn-card compact-turn-card" [class.active]="selectedTurnId() === turn.id" [class.turn-complete]="turn.status === 'complete'">
+                            <button type="button" class="list-item-button planner-turn-button" (click)="selectTurn(turn)">
+                              <div>
+                                <strong>{{ participantName(turn.participantId) }}</strong>
+                                <small>{{ turn.turnType }} turn · {{ turn.status }}</small>
+                              </div>
+                              <span>{{ turn.actionsUsed }}/{{ turn.actionsAvailable }}</span>
+                            </button>
+                          </article>
+                        } @empty {
+                          <article class="empty-card">Nothing committed here yet.</article>
+                        }
+                      </div>
+                    }
+                  </section>
+                }
+              </div>
+            </section>
+          } @else {
+            <article class="empty-card">This combat has not been started yet.</article>
+          }
+        </aside>
+
+        <section class="combat-main-stage">
+          <section class="card engraved-panel battle-board-panel" data-tour="combat-participants">
+            <div class="card-header">
+              <div class="section-heading">
+                <app-roshar-icon key="sessions" label="Battle board" tone="sapphire" [size]="18" />
+                <h3>Battle board</h3>
+              </div>
+              <div class="ledger-meta">
+                @if (selectedParticipant()) {
+                  <span class="pill emphasis-pill">Actor {{ selectedParticipant()!.name }}</span>
+                }
+                @if (selectedTarget()) {
+                  <span class="pill">Target {{ selectedTarget()!.name }}</span>
+                }
+              </div>
+            </div>
+
+            <div class="battle-lane-stack">
+              @for (lane of battleLanes(); track lane.key) {
+                <section class="inset-panel battle-lane compact-battle-lane" [class.opposition-lane]="lane.key === 'opposition'">
+                  <div class="battle-lane-header">
+                    <div class="section-heading">
+                      <app-roshar-icon [key]="lane.key === 'pc' ? 'sessions' : 'combat'" [label]="lane.label" [tone]="lane.tone" [size]="16" />
+                      <h3>{{ lane.label }}</h3>
+                    </div>
+                    <span class="tag-chip">{{ lane.participants.length }}</span>
+                  </div>
+
+                  <div class="battle-row-stack">
+                    @for (participant of lane.participants; track participant.id) {
+                      <app-combat-participant-row
+                        [participant]="participant"
+                        [tone]="participantTone(participant.side)"
+                        [statusLabel]="participantStatusLabel(participant.id)"
+                        [reactionLabel]="reactionDetailLabel(participant.id)"
+                        [reactionTone]="reactionTone(participant.id)"
+                        [turnStatus]="participantTurnStatus(participant.id)"
+                        [isActor]="selectedParticipant()?.id === participant.id"
+                        [isTarget]="selectedTarget()?.id === participant.id"
+                        (selectParticipant)="selectParticipant(participant.id)"
+                        (adjustHealth)="adjustHealthFromRow(participant.id, $event)"
+                        (adjustFocus)="adjustFocus(participant.id, $event)" />
+                    }
+                  </div>
+                </section>
+              }
+            </div>
+          </section>
+
+          <app-combat-resolution-board
+            [phaseLabel]="currentRound() ? phaseLabel(currentRound()!.currentPhase) : ''"
+            [selectedParticipant]="selectedParticipant()"
+            [selectedTurn]="selectedTurn()"
+            [selectedParticipantState]="selectedParticipantState()"
+            [selectedTarget]="selectedTarget()"
+            [supportText]="resolutionSupportText()"
+            [resolutionMode]="resolutionMode()"
+            [resolutionModes]="resolutionModes"
+            [actionForm]="actionForm"
+            [conditionForm]="conditionForm"
+            [actionChoiceGroups]="activeActionGroups()"
+            [selectedActionChoiceId]="selectedActionChoiceId()"
+            [loggerTargets]="loggerTargets()"
+            [selectedWarnings]="selectedWarnings()"
+            [quickD20Values]="quickD20Values"
+            [quickCountValues]="quickCountValues"
+            [resultChips]="resultChips"
+            [commonConditions]="commonConditions"
+            [currentActionRequiresTarget]="currentActionRequiresTarget()"
+            [currentActionRequiresRoll]="currentActionRequiresRoll()"
+            [currentActionSupportsDamage]="currentActionSupportsDamage()"
+            [showTargetStripForAction]="currentActionShowsTargetStrip()"
+            [showRollFieldsForAction]="currentActionShowsRollFields()"
+            [showDamageFieldForAction]="currentActionShowsDamageField()"
+            [canCommitSelectedParticipant]="selectedParticipantEligibleNow()"
+            [commitLabel]="currentRound() ? commitLabel(currentRound()!.currentPhase) : 'Commit'"
+            [canSubmitAction]="canSubmitAction()"
+            [canSpendReaction]="!!selectedParticipantState()?.reactionAvailable"
+            [canSelectNextTurn]="canSelectNextTurn()"
+            [nextTurnLabel]="nextTurnLabel()"
+            [submitBlockedReason]="submitBlockedReason()"
+            [preferNextTurn]="preferNextTurn()"
+            [canCompleteTurn]="selectedTurn()?.status === 'open'"
+            [canSaveStrikePreset]="selectedActionMeta()?.source === 'catalog' && selectedActionMeta()?.actionType === 'strike'"
+            [logButtonLabel]="logButtonLabel()"
+            [showEnemySheetButton]="!!selectedEnemySheet()"
+            (resolutionModeChange)="setResolutionMode($event)"
+            (actionChoiceSelect)="selectActionChoice($event)"
+            (targetSelect)="setTargetId($event)"
+            (clearTarget)="clearTarget()"
+            (selectRawD20)="setRawD20($event)"
+            (clearRawD20)="clearRawD20()"
+            (selectHitResult)="setHitResult($event)"
+            (selectOpportunityCount)="setOpportunityCount($event)"
+            (selectComplicationCount)="setComplicationCount($event)"
+            (submitAction)="logAction()"
+            (spendReaction)="spendReaction()"
+            (selectNextTurn)="selectNextTurn()"
+            (completeTurn)="completeSelectedTurn()"
+            (commitTurn)="commitSelectedParticipant()"
+            (saveStrikePreset)="saveStrikePreset()"
+            (addCondition)="addCondition()"
+            (removeCondition)="removeCondition(selectedParticipant()!.id, $event)"
+            (openEnemySheet)="openEnemySheet()" />
+
+          <section class="card engraved-panel chronicle-feed combat-feed-panel chronicle-drawer" [class.open]="chronicleOpen()" data-tour="combat-feed">
+            <div class="card-header">
+              <div class="section-heading">
+                <app-roshar-icon key="chronicle" label="Battle chronicle" tone="topaz" [size]="18" />
+                <h3>Battle chronicle</h3>
+              </div>
+              <div class="ledger-meta">
+                <span class="pill">{{ chronicleEntries().length }}</span>
+                <button type="button" class="button-outline micro-button" (click)="chronicleOpen.set(!chronicleOpen())">
+                  {{ chronicleOpen() ? 'Collapse' : 'Expand' }}
+                </button>
+              </div>
+            </div>
+
+            @if (chronicleOpen()) {
+              <div class="list-stack">
+                @for (entry of chronicleEntries(); track entry.id) {
+                  <article class="timeline-item chronicle-entry" [class.resource-entry]="entry.category !== 'action'">
+                    <strong class="event-line">
+                      <app-roshar-icon [key]="entry.icon.key" [label]="entry.icon.label" [tone]="entryTone(entry.icon.tone)" [size]="16" />
+                      {{ entry.title }}
+                    </strong>
+                    <p class="event-line">
+                      @if (entry.result) {
+                        <app-roshar-icon [key]="entry.result.key" [label]="entry.result.label" [tone]="entryTone(entry.result.tone)" [size]="14" />
+                      }
+                      {{ entry.detail }}
+                    </p>
+                    <small>{{ entry.timestamp | date: 'short' }} • {{ entry.note }}</small>
+                    @if (entry.category === 'action') {
+                      <div class="compact-button-row chronicle-actions">
+                        <button type="button" class="button-outline micro-button" (click)="revertAction(entry.id)">Undo</button>
+                      </div>
+                    }
+                  </article>
+                } @empty {
+                  <article class="empty-card">No actions in the chronicle yet. Commit the first turn or spend a reaction to wake the board.</article>
+                }
+              </div>
+            } @else {
+              <article class="empty-card">Chronicle is collapsed so the battle board and resolution board stay clear during live play.</article>
+            }
+          </section>
         </section>
-      }
+      </div>
     } @else {
       <section class="card empty-card">Loading combat...</section>
     }
@@ -438,27 +537,62 @@ export class CombatTrackerPageComponent {
   private readonly route = inject(ActivatedRoute);
   private readonly destroyRef = inject(DestroyRef);
   private readonly fb = inject(FormBuilder);
+
   readonly combatId = signal('');
   readonly actionCatalog = ACTION_CATALOG;
-  readonly pinnedActionKeys = ['strike', 'move', 'aid', 'dodge', 'recover', 'custom'];
-  readonly quickD20Values = Array.from({ length: 20 }, (_, index) => index + 1);
-  readonly commonConditions = ['Dazed', 'Prone', 'Marked', 'Inspired', 'Bleeding'];
+  readonly catalogActionChoices = ACTION_CATALOG.map((item) => buildCatalogChoice(item));
+  readonly commonConditions = COMMON_CONDITIONS;
+  readonly quickD20Values = QUICK_D20_VALUES;
+  readonly quickCountValues = QUICK_COUNT_VALUES;
+  readonly resultChips = RESULT_CHIPS;
+  readonly resolutionModes = RESOLUTION_MODES;
+  readonly chronicleOpen = signal(false);
+  readonly resolutionMode = signal<ResolutionMode>('action');
+  readonly expandedPhaseGroups = signal<CombatPhase[]>(DEFAULT_EXPANDED_PHASES);
   readonly selectedTurnId = signal('');
   readonly selectedParticipantId = signal('');
-  readonly roundStatus = signal('');
-  readonly roundPlannerOpen = signal(false);
-  readonly roundPlannerAssignments = signal<Record<string, TurnType>>({});
+  readonly selectedActionChoiceId = signal(`${ACTION_CHOICE_PREFIX}${DEFAULT_STRIKE_ACTION_KEY}`);
+  readonly actionType = signal(DEFAULT_STRIKE_ACTION_KEY);
+  readonly targetId = signal('');
+
+  readonly currentRound = computed(() => {
+    const combat = this.store.combat();
+    if (!combat) {
+      return null;
+    }
+    return combat.rounds.find((round) => round.roundNumber === combat.currentRoundNumber) ?? combat.rounds.at(-1) ?? null;
+  });
+
   readonly selectedTurn = computed(
     () => this.store.combat()?.turns.find((turn) => turn.id === this.selectedTurnId()) ?? null,
   );
-  readonly selectedParticipant = computed(
-    () =>
-      this.store
-        .combat()
-        ?.participants.find(
-          (participant) => participant.id === this.selectedParticipantId() || participant.id === this.selectedTurn()?.participantId,
-        ) ?? null,
-  );
+
+  readonly selectedParticipant = computed(() => {
+    const combat = this.store.combat();
+    if (!combat) {
+      return null;
+    }
+    const participantId = this.selectedTurn()?.participantId ?? this.selectedParticipantId();
+    return combat.participants.find((participant) => participant.id === participantId) ?? null;
+  });
+
+  readonly selectedParticipantState = computed(() => {
+    const participant = this.selectedParticipant();
+    const round = this.currentRound();
+    if (!participant || !round) {
+      return null;
+    }
+    return round.participantStates.find((state) => state.participantId === participant.id) ?? null;
+  });
+
+  readonly selectedTarget = computed(() => {
+    const combat = this.store.combat();
+    if (!combat || !this.targetId()) {
+      return null;
+    }
+    return combat.participants.find((participant) => participant.id === this.targetId()) ?? null;
+  });
+
   readonly selectedEnemySheet = computed(() => {
     const participant = this.selectedParticipant();
     if (!participant || (participant.side !== 'enemy' && participant.side !== 'npc') || !participant.imagePath) {
@@ -469,44 +603,175 @@ export class CombatTrackerPageComponent {
       imagePath: participant.imagePath,
     };
   });
-  readonly availableTargets = computed(
-    () => this.store.combat()?.participants.filter((participant) => participant.id !== this.selectedTurn()?.participantId) ?? [],
+
+  readonly presetActionChoices = computed(() => (this.selectedParticipant()?.presetActions ?? []).map((action) => buildPresetChoice(action)));
+
+  readonly allActionChoices = computed(() => [...this.catalogActionChoices, ...this.presetActionChoices()]);
+
+  readonly selectedActionMeta = computed(
+    () => this.allActionChoices().find((entry) => entry.id === this.selectedActionChoiceId()) ?? null,
   );
-  readonly groupedRounds = computed(() => {
+
+  readonly handbookActionChoices = computed(() =>
+    sortCatalogWithPriority(
+      this.actionCatalog.filter((item) => item.type === 'action' && item.key !== DEFAULT_CUSTOM_ACTION_KEY),
+      DEFAULT_STRIKE_ACTION_KEY,
+    ).map((item) => buildCatalogChoice(item)),
+  );
+
+  readonly handbookFallbackActionChoice = computed(
+    () => this.catalogActionChoices.find((entry) => entry.actionType === DEFAULT_CUSTOM_ACTION_KEY) ?? null,
+  );
+
+  readonly handbookReactionChoices = computed(() =>
+    sortCatalogWithPriority(
+      this.actionCatalog.filter((item) => item.type === 'reaction' && item.key !== DEFAULT_REACTION_ACTION_KEY),
+      'aid',
+    ).map((item) => buildCatalogChoice(item)),
+  );
+
+  readonly handbookFallbackReactionChoice = computed(
+    () => this.catalogActionChoices.find((entry) => entry.actionType === DEFAULT_REACTION_ACTION_KEY) ?? null,
+  );
+
+  readonly freeActionChoices = computed(() =>
+    this.catalogActionChoices.filter((entry) => entry.actionKind === 'free').concat(
+      this.presetActionChoices().filter((entry) => entry.actionKind === 'free'),
+    ),
+  );
+
+  readonly presetActionGroups = computed((): ResolutionActionGroup[] => {
+    const presetChoices = this.presetActionChoices();
+    const groups: ResolutionActionGroup[] = [];
+    const presetActions = presetChoices.filter((entry) => entry.actionKind === 'action');
+    if (presetActions.length) {
+      groups.push({ key: 'preset-actions', label: 'Preset actions', choices: presetActions });
+    }
+    const presetReactions = presetChoices.filter((entry) => entry.actionKind === 'reaction');
+    if (presetReactions.length) {
+      groups.push({ key: 'preset-reactions', label: 'Preset reactions', choices: presetReactions });
+    }
+    return groups;
+  });
+
+  readonly actionChoiceGroups = computed<ResolutionActionGroup[]>(() => {
+    const groups: ResolutionActionGroup[] = [
+      { key: 'handbook-actions', label: 'Handbook', choices: this.handbookActionChoices() },
+    ];
+    const presetActions = this.presetActionGroups().find((group) => group.key === 'preset-actions');
+    if (presetActions) {
+      groups.push(presetActions);
+    }
+    if (this.handbookFallbackActionChoice()) {
+      groups.push({ key: 'custom-action', label: 'Fallback', choices: [this.handbookFallbackActionChoice()!] });
+    }
+    if (this.freeActionChoices().length) {
+      groups.push({ key: 'free-actions', label: 'Free', choices: this.freeActionChoices() });
+    }
+    return groups.filter((group) => group.choices.length);
+  });
+
+  readonly reactionChoiceGroups = computed<ResolutionActionGroup[]>(() => {
+    const groups: ResolutionActionGroup[] = [
+      { key: 'handbook-reactions', label: 'Handbook', choices: this.handbookReactionChoices() },
+    ];
+    const presetReactions = this.presetActionGroups().find((group) => group.key === 'preset-reactions');
+    if (presetReactions) {
+      groups.push(presetReactions);
+    }
+    if (this.handbookFallbackReactionChoice()) {
+      groups.push({ key: 'custom-reaction', label: 'Fallback', choices: [this.handbookFallbackReactionChoice()!] });
+    }
+    return groups.filter((group) => group.choices.length);
+  });
+
+  readonly battleLanes = computed<BattleLane[]>(() => {
     const combat = this.store.combat();
     if (!combat) {
       return [];
     }
-    const round = combat.rounds.at(-1);
-    if (!round) {
-      return [];
-    }
     return [
-      { label: 'Fast PCs', turns: this.turnsForGroup(round.fastPCIds, round.id) },
-      { label: 'Fast NPCs', turns: this.turnsForGroup(round.fastNPCIds, round.id) },
-      { label: 'Slow PCs', turns: this.turnsForGroup(round.slowPCIds, round.id) },
-      { label: 'Slow NPCs', turns: this.turnsForGroup(round.slowNPCIds, round.id) },
+      {
+        key: 'pc',
+        label: 'PCs',
+        tone: 'sapphire',
+        participants: combat.participants.filter((participant) => participant.side === PLAYER_SIDE),
+      },
+      {
+        key: 'opposition',
+        label: 'NPCs and Enemies',
+        tone: 'ruby',
+        participants: combat.participants.filter((participant) => participant.side !== PLAYER_SIDE),
+      },
     ];
   });
-  readonly plannerGroups = computed(() => {
+
+  readonly activeActionGroups = computed(() =>
+    this.resolutionMode() === 'reaction' ? this.reactionChoiceGroups() : this.actionChoiceGroups(),
+  );
+
+  readonly unresolvedParticipants = computed(() => {
     const combat = this.store.combat();
-    if (!combat) {
+    const round = this.currentRound();
+    if (!combat || !round) {
       return [];
     }
-    return [
-      {
-        label: 'Players and allies',
-        tone: 'sapphire' as const,
-        entries: combat.participants.filter((participant) => participant.side === 'pc' || participant.side === 'ally'),
-      },
-      {
-        label: 'NPCs and enemies',
-        tone: 'ruby' as const,
-        entries: combat.participants.filter((participant) => participant.side === 'npc' || participant.side === 'enemy'),
-      },
-    ].filter((group) => group.entries.length);
+    return round.participantStates
+      .filter((state) => !state.turnId)
+      .map((state) => {
+        const participant = combat.participants.find((entry) => entry.id === state.participantId);
+        if (!participant) {
+          return null;
+        }
+        return {
+          participant,
+          state,
+          commitState: this.participantCommitState(participant, round.currentPhase, state),
+          eligibleNow: this.participantCommitState(participant, round.currentPhase, state) === 'can-commit',
+        };
+      })
+      .filter(
+        (
+          entry,
+        ): entry is {
+          participant: CombatRecord['participants'][number];
+          state: CombatRound['participantStates'][number];
+          commitState: 'can-commit' | 'later' | 'passed' | 'committed';
+          eligibleNow: boolean;
+        } => Boolean(entry),
+      );
   });
-  readonly chronicleEntries = computed(() => {
+
+  readonly readyParticipants = computed(() => this.unresolvedParticipants().filter((entry) => entry.commitState === 'can-commit'));
+
+  readonly laterParticipants = computed(() => this.unresolvedParticipants().filter((entry) => entry.commitState === 'later'));
+
+  readonly passedParticipants = computed(() => this.unresolvedParticipants().filter((entry) => entry.commitState === 'passed'));
+
+  readonly phaseGroups = computed<PhaseGroup[]>(() => {
+    const combat = this.store.combat();
+    const round = this.currentRound();
+    if (!combat || !round) {
+      return [];
+    }
+    return COMBAT_PHASES.map((phase) => {
+      const queue = this.phaseQueue(round, phase);
+      return {
+        phase,
+        label: this.phaseLabel(phase),
+        active: round.currentPhase === phase,
+        turns: queue
+          .map((turnId) => combat.turns.find((turn) => turn.id === turnId))
+          .filter((turn): turn is CombatTurn => Boolean(turn)),
+      };
+    });
+  });
+
+  readonly activePhaseGroup = computed(() => this.phaseGroups().find((group) => group.active) ?? null);
+
+  readonly inactivePhaseGroups = computed(() => this.phaseGroups().filter((group) => !group.active));
+
+  readonly chronicleEntries = computed<ChronicleEntry[]>(() => {
     const combat = this.store.combat();
     if (!combat) {
       return [];
@@ -518,8 +783,8 @@ export class CombatTrackerPageComponent {
       category: 'action' as const,
       icon: this.actionDescriptor(event.actionType),
       result: this.resultDescriptor(event.hitResult),
-      title: `${this.participantName(event.actorId)} used ${this.actionName(event.actionType)}`,
-      detail: `${event.hitResult || 'neutral'} • damage ${event.damageAmount || 0} • focus ${event.focusCost}`,
+      title: `${this.participantName(event.actorId)} used ${event.actionLabel || this.actionName(event.actionType)}`,
+      detail: this.actionDetail(event),
       note: event.note || 'No note',
     }));
 
@@ -561,41 +826,112 @@ export class CombatTrackerPageComponent {
       .slice(0, 40);
   });
 
-  readonly actionForm = this.fb.nonNullable.group({
-    actionType: ['strike'],
-    useTarget: [true],
-    useRoll: [true],
-    trackDamage: [true],
+  readonly selectedWarnings = computed(() => {
+    const combat = this.store.combat();
+    const turn = this.selectedTurn();
+    const action = this.selectedActionMeta();
+    if (!combat || !action) {
+      return [];
+    }
+
+    const warnings: string[] = [];
+    if (action.warnOncePerCombat && combat.actionEvents.some((event) => event.actionType === action.actionType)) {
+      warnings.push(`${action.label} is already logged in this combat. Treat combat as the scene boundary for now.`);
+    }
+    if (
+      turn &&
+      !action.repeatablePerTurn &&
+      action.actionKind !== 'reaction' &&
+      combat.actionEvents.some((event) => event.turnId === turn.id && event.actionType === action.actionType)
+    ) {
+      warnings.push(`${action.label} is usually only used once per turn unless an effect says otherwise.`);
+    }
+    if (this.currentActionRequiresTarget() && !this.selectedTarget()) {
+      warnings.push('Pick a target from the battle board before logging this action.');
+    }
+    return warnings;
+  });
+
+  readonly loggerTargets = computed<ResolutionTargetChip[]>(() => {
+    const combat = this.store.combat();
+    const participant = this.selectedParticipant();
+    const action = this.selectedActionMeta();
+    if (!combat || !participant || !this.currentActionShowsTargetStrip()) {
+      return [];
+    }
+
+    const targetSameSide = isSupportTargetAction(action);
+    return combat.participants
+      .filter((candidate) => {
+        if (candidate.id === participant.id) {
+          return false;
+        }
+        return targetSameSide ? candidate.side === participant.side : candidate.side !== participant.side;
+      })
+      .map((candidate) => ({
+        id: candidate.id,
+        name: candidate.name,
+        tone: this.participantTone(candidate.side),
+        healthLabel: this.resourceText(candidate.currentHealth, candidate.maxHealth),
+        focusLabel: this.resourceText(candidate.currentFocus, candidate.maxFocus),
+        active: this.targetId() === candidate.id,
+      }));
+  });
+
+  readonly resolutionSupportText = computed<ResolutionSupportText>(() => {
+    const turn = this.selectedTurn();
+    const target = this.selectedTarget();
+    const reactionAvailable = this.selectedParticipantState()?.reactionAvailable;
+
+    return {
+      actorStatus: this.selectedTurnStateMessage(),
+      targetStatus: target
+        ? `${this.resourceText(target.currentHealth, target.maxHealth)} HP · ${this.resourceText(target.currentFocus, target.maxFocus)} focus`
+        : this.currentActionRequiresTarget()
+          ? 'Pick the next target from the strip below.'
+          : this.currentActionShowsTargetStrip()
+            ? 'Optional target. Pick someone if this action affects a combatant.'
+          : 'No target needed for this action.',
+      reactionStatus: reactionAvailable ? 'Reaction available' : turn?.status === 'complete' ? 'Reaction window still open' : 'Reaction spent',
+    };
+  });
+
+  readonly actionForm: CombatActionForm = this.fb.nonNullable.group({
+    actionType: [DEFAULT_STRIKE_ACTION_KEY],
+    actionKind: ['action' as ActionKind],
+    presetActionId: [''],
+    actionCost: [1, Validators.min(0)],
     targetId: [''],
-    rawD20: [10],
+    rawD20: [0, [Validators.min(0), Validators.max(20)]],
     modifier: [0],
     hitResult: ['neutral' as HitResult],
-    damageAmount: [0],
-    focusCost: [0],
+    damageAmount: [0, Validators.min(0)],
+    focusCost: [0, Validators.min(0)],
+    opportunityCount: [0, Validators.min(0)],
+    complicationCount: [0, Validators.min(0)],
+    damageFormula: [''],
+    damageBreakdown: [''],
     note: [''],
   });
-  readonly conditionForm = this.fb.nonNullable.group({
+
+  readonly conditionForm: CombatConditionForm = this.fb.nonNullable.group({
     conditionName: [''],
   });
 
   constructor() {
-    const sub = this.route.paramMap.subscribe((params) => {
+    const routeSub = this.route.paramMap.subscribe((params) => {
       const combatId = params.get('combatId');
-      if (combatId) {
-        this.combatId.set(combatId);
-        void this.store.loadCombat(combatId).then(() => {
-          const turn = this.store.combat()?.turns[0];
-          if (turn) {
-            this.selectTurn(turn);
-          }
-        });
+      if (!combatId) {
+        return;
       }
+      this.combatId.set(combatId);
+      void this.store.loadCombat(combatId).then(() => this.syncActionForContext());
     });
-    const actionSub = this.actionForm.controls.actionType.valueChanges.subscribe((actionType) => {
-      this.applyActionDefaults(actionType);
+    const targetSub = this.actionForm.controls.targetId.valueChanges.subscribe((targetId) => {
+      this.targetId.set(targetId);
     });
-    this.destroyRef.onDestroy(() => sub.unsubscribe());
-    this.destroyRef.onDestroy(() => actionSub.unsubscribe());
+    this.destroyRef.onDestroy(() => routeSub.unsubscribe());
+    this.destroyRef.onDestroy(() => targetSub.unsubscribe());
   }
 
   participantName(participantId: string): string {
@@ -606,35 +942,25 @@ export class CombatTrackerPageComponent {
     return this.actionCatalog.find((entry) => entry.key === actionType)?.name ?? actionType;
   }
 
-  pinnedActions() {
-    return this.pinnedActionKeys.map((key) => this.actionCatalog.find((entry) => entry.key === key)).filter(Boolean);
-  }
-
   actionDescriptor(actionType: string) {
     return actionIcon(actionType, this.actionName(actionType));
   }
 
-  selectedActionDescriptor() {
-    return this.actionDescriptor(this.actionForm.controls.actionType.value);
-  }
-
-  selectedActionMeta() {
-    return this.actionCatalog.find((entry) => entry.key === this.actionForm.controls.actionType.value) ?? null;
-  }
-
-  showTargetField(): boolean {
-    const meta = this.selectedActionMeta();
-    return Boolean(meta?.requiresTarget || this.actionForm.controls.useTarget.value);
-  }
-
-  showRollField(): boolean {
-    const meta = this.selectedActionMeta();
-    return Boolean(meta?.requiresRoll || this.actionForm.controls.useRoll.value);
-  }
-
-  showDamageField(): boolean {
-    const meta = this.selectedActionMeta();
-    return Boolean(meta?.supportsDamage || this.actionForm.controls.trackDamage.value);
+  actionDetail(event: CombatRecord['actionEvents'][number]): string {
+    const details: string[] = [event.hitResult || 'neutral'];
+    if (event.damageAmount) {
+      details.push(`damage ${event.damageAmount}`);
+    }
+    if (event.damageFormula) {
+      details.push(`formula ${event.damageFormula}`);
+    }
+    if (event.damageBreakdown) {
+      details.push(`roll ${event.damageBreakdown}`);
+    }
+    if (event.focusCost) {
+      details.push(`focus ${event.focusCost}`);
+    }
+    return details.join(' • ');
   }
 
   resultDescriptor(result: string | undefined) {
@@ -660,158 +986,450 @@ export class CombatTrackerPageComponent {
     return side === 'enemy' || side === 'npc' ? 'ruby' : 'sapphire';
   }
 
-  groupIcon(label: string): string {
-    return label.startsWith('Fast') ? 'fast' : 'slow';
+  phaseLabel(phase: CombatPhase): string {
+    switch (phase) {
+      case 'fast-pc':
+        return 'Fast PC';
+      case 'fast-npc':
+        return 'Fast NPC';
+      case 'slow-pc':
+        return 'Slow PC';
+      case 'slow-npc':
+        return 'Slow NPC';
+    }
   }
 
-  groupTone(label: string) {
-    if (label.startsWith('Fast')) {
+  phaseIcon(phase: CombatPhase): string {
+    return phase.startsWith('fast') ? 'fast' : 'slow';
+  }
+
+  phaseTone(phase: CombatPhase): 'topaz' | 'ruby' | 'sapphire' {
+    if (phase.startsWith('fast')) {
       return 'topaz';
     }
-    return label.includes('NPC') ? 'ruby' : 'sapphire';
+    return phase.endsWith('npc') ? 'ruby' : 'sapphire';
   }
 
-  selectTurn(turn: CombatTurn): void {
-    this.selectedTurnId.set(turn.id);
-    this.selectedParticipantId.set(turn.participantId);
-    this.roundStatus.set('');
+  commitLabel(phase: CombatPhase): string {
+    return phase.startsWith('fast') ? 'Commit Fast' : 'Commit Slow';
+  }
+
+  waitingLabel(participantId: string): string {
+    const combat = this.store.combat();
+    const round = this.currentRound();
+    const participant = combat?.participants.find((entry) => entry.id === participantId);
+    if (!participant || !round) {
+      return 'Waiting';
+    }
+
+    if (participant.side === PLAYER_SIDE) {
+      switch (round.currentPhase) {
+        case 'fast-npc':
+          return WAITING_FOR_SLOW_PC_LABEL;
+        case 'slow-npc':
+          return PHASE_PASSED_THIS_ROUND_LABEL;
+        default:
+          return 'Waiting';
+      }
+    }
+
+    switch (round.currentPhase) {
+      case 'fast-pc':
+        return WAITING_FOR_FAST_NPC_LABEL;
+      case 'slow-pc':
+        return WAITING_FOR_SLOW_NPC_LABEL;
+      default:
+        return 'Waiting';
+    }
+  }
+
+  phaseQueue(round: CombatRound, phase: CombatPhase): string[] {
+    switch (phase) {
+      case 'fast-pc':
+        return round.fastPCQueueIds;
+      case 'fast-npc':
+        return round.fastNPCQueueIds;
+      case 'slow-pc':
+        return round.slowPCQueueIds;
+      case 'slow-npc':
+        return round.slowNPCQueueIds;
+    }
+  }
+
+  participantTurnStatus(participantId: string): CombatTurn['status'] | 'uncommitted' {
+    const state = this.currentRound()?.participantStates.find((entry) => entry.participantId === participantId);
+    return state?.turnStatus ?? 'uncommitted';
+  }
+
+  participantStatusLabel(participantId: string): string {
+    const state = this.currentRound()?.participantStates.find((entry) => entry.participantId === participantId);
+    if (!state?.turnId) {
+      return this.commitStatusLabel(participantId);
+    }
+    return state.turnStatus === 'complete' ? 'Turn complete' : `${state.turnType} turn open`;
+  }
+
+  reactionDetailLabel(participantId: string): string {
+    return this.currentRound()?.participantStates.find((entry) => entry.participantId === participantId)?.reactionAvailable
+      ? 'Reaction available'
+      : 'Reaction spent';
+  }
+
+  reactionTone(participantId: string): 'emerald' | 'ruby' {
+    return this.currentRound()?.participantStates.find((entry) => entry.participantId === participantId)?.reactionAvailable
+      ? 'emerald'
+      : 'ruby';
+  }
+
+  currentActionRequiresTarget(): boolean {
+    return Boolean(this.selectedActionMeta()?.requiresTarget);
+  }
+
+  currentActionRequiresRoll(): boolean {
+    return Boolean(this.selectedActionMeta()?.requiresRoll);
+  }
+
+  currentActionSupportsDamage(): boolean {
+    return Boolean(this.selectedActionMeta()?.supportsDamage);
+  }
+
+  currentActionShowsTargetStrip(): boolean {
+    return this.currentActionRequiresTarget() || this.isFlexibleCustomAction();
+  }
+
+  currentActionShowsRollFields(): boolean {
+    return this.currentActionRequiresRoll() || this.isFlexibleCustomAction();
+  }
+
+  currentActionShowsDamageField(): boolean {
+    return this.currentActionSupportsDamage() || this.isFlexibleCustomAction();
+  }
+
+  resourceText(current: number | undefined, max: number | undefined): string {
+    if (current === undefined) {
+      return '-';
+    }
+    return max !== undefined ? `${current}/${max}` : `${current}`;
+  }
+
+  currentPhaseOpenTurns(): CombatTurn[] {
+    const combat = this.store.combat();
+    const round = this.currentRound();
+    if (!combat || !round) {
+      return [];
+    }
+    return this.phaseQueue(round, round.currentPhase)
+      .map((turnId) => combat.turns.find((turn) => turn.id === turnId))
+      .filter((turn): turn is CombatTurn => turn !== undefined && turn.status === 'open');
+  }
+
+  currentPhaseBlockingOpenTurns(): CombatTurn[] {
+    return this.currentPhaseOpenTurns().filter((turn) => turn.actionsUsed < turn.actionsAvailable);
+  }
+
+  currentPhaseExhaustedOpenTurns(): CombatTurn[] {
+    return this.currentPhaseOpenTurns().filter((turn) => turn.actionsUsed >= turn.actionsAvailable);
+  }
+
+  canAdvancePhase(): boolean {
+    const combat = this.store.combat();
+    if (!combat || combat.status !== 'active') {
+      return false;
+    }
+    return this.currentPhaseBlockingOpenTurns().length === 0;
+  }
+
+  advanceStatusLabel(): string {
+    const blockingCount = this.currentPhaseBlockingOpenTurns().length;
+    if (blockingCount > 0) {
+      return blockingCount === 1 ? 'Open turn 1' : `Open turns ${blockingCount}`;
+    }
+
+    const exhaustedCount = this.currentPhaseExhaustedOpenTurns().length;
+    if (exhaustedCount > 0) {
+      return exhaustedCount === 1 ? 'Ready to close 1' : `Ready to close ${exhaustedCount}`;
+    }
+
+    return 'Ready to advance';
+  }
+
+  advancePhaseGuidance(): string {
+    const blockingTurns = this.currentPhaseBlockingOpenTurns();
+    if (blockingTurns.length > 0) {
+      const firstTurn = blockingTurns[0];
+      return `${this.participantName(firstTurn.participantId)} still has actions remaining in this phase.`;
+    }
+
+    const exhaustedTurns = this.currentPhaseExhaustedOpenTurns();
+    if (exhaustedTurns.length > 0) {
+      return 'Exhausted turns will auto-close when you advance the phase.';
+    }
+
+    return 'Only open turns with actions remaining block phase advance.';
+  }
+
+  canSubmitAction(): boolean {
+    const participant = this.selectedParticipant();
+    const action = this.selectedActionMeta();
+    if (!participant || !action) {
+      return false;
+    }
+    if (this.currentActionRequiresTarget() && !this.selectedTarget()) {
+      return false;
+    }
+    if (this.currentActionRequiresRoll()) {
+      const rawD20 = this.actionForm.controls.rawD20.value;
+      if (rawD20 < 1 || rawD20 > 20) {
+        return false;
+      }
+    }
+    if (action.actionKind === 'reaction') {
+      return Boolean(this.selectedParticipantState()?.reactionAvailable);
+    }
+    const turn = this.selectedTurn();
+    if (action.actionKind === 'free') {
+      return turn?.status === 'open';
+    }
+    return Boolean(
+      turn?.status === 'open' &&
+      turn.actionsUsed + this.actionForm.controls.actionCost.value <= turn.actionsAvailable,
+    );
+  }
+
+  logButtonLabel(): string {
+    const action = this.selectedActionMeta();
+    if (!action) {
+      return 'Log action';
+    }
+    if (this.turnExhausted() && action.actionKind === 'action') {
+      return 'No actions left';
+    }
+    return `Log ${action.label}`;
+  }
+
+  selectedTurnStateMessage(): string {
+    const turn = this.selectedTurn();
+    const participant = this.selectedParticipant();
+    if (turn?.status === 'open') {
+      if (turn.actionsUsed >= turn.actionsAvailable) {
+        return this.nextOpenTurnCandidate()
+          ? 'Actions spent. Move to the next open turn or advance the phase to close this one.'
+          : 'Actions spent. End the turn or advance the phase to close it.';
+      }
+      return `${turn.actionsUsed}/${turn.actionsAvailable} actions spent. Keep resolving from this board until the turn ends.`;
+    }
+    if (turn?.status === 'complete') {
+      return 'Turn is complete. You can still log a reaction if one is available.';
+    }
+    if (this.selectedParticipantEligibleNow()) {
+      return `${this.commitLabel(this.currentRound()!.currentPhase)} to start this combatant’s turn in the current phase.`;
+    }
+    if (participant) {
+      return this.commitStatusLabel(participant.id);
+    }
+    return 'Waiting for combat to start.';
+  }
+
+  canSelectNextTurn(): boolean {
+    return Boolean(this.nextOpenTurnCandidate());
+  }
+
+  nextTurnLabel(): string {
+    const nextTurn = this.nextOpenTurnCandidate();
+    return nextTurn ? `Next turn: ${this.participantName(nextTurn.participantId)}` : 'Next turn';
+  }
+
+  preferNextTurn(): boolean {
+    return this.turnExhausted() && this.canSelectNextTurn();
+  }
+
+  submitBlockedReason(): string {
+    const participant = this.selectedParticipant();
+    const action = this.selectedActionMeta();
+    if (!participant || !action) {
+      return '';
+    }
+
+    if (this.turnExhausted() && action.actionKind === 'action') {
+      if (this.canSelectNextTurn()) {
+        return `${participant.name} has no actions left. ${action.label} costs actions, so move to ${this.nextTurnLabel()} or end this turn.`;
+      }
+      return `${participant.name} has no actions left. ${action.label} costs actions, so end this turn or advance the phase.`;
+    }
+
+    return '';
   }
 
   async startCombat(): Promise<void> {
     await this.store.startCombat(this.combatId());
+    this.selectFirstEligibleUnresolvedParticipant();
   }
 
   async finishCombat(): Promise<void> {
     await this.store.finishCombat(this.combatId());
   }
 
-  openRoundPlanner(): void {
-    const combat = this.store.combat();
-    const previous = combat?.rounds.at(-1);
-    if (!combat || !previous) {
+  selectParticipant(participantId: string): void {
+    this.selectedParticipantId.set(participantId);
+    const turnId = this.currentRound()?.participantStates.find((state) => state.participantId === participantId)?.turnId;
+    this.selectedTurnId.set(turnId ?? '');
+    this.clearTarget();
+    this.syncActionForContext();
+  }
+
+  selectTurn(turn: CombatTurn): void {
+    this.selectedTurnId.set(turn.id);
+    this.selectedParticipantId.set(turn.participantId);
+    this.clearTarget();
+    this.syncActionForContext();
+  }
+
+  async commitParticipant(participantId: string): Promise<void> {
+    await this.store.commitCurrentRound(this.combatId(), { participantId });
+    const round = this.currentRound();
+    const turnId = round?.participantStates.find((state) => state.participantId === participantId)?.turnId;
+    this.selectedParticipantId.set(participantId);
+    this.selectedTurnId.set(turnId ?? '');
+    this.clearTarget();
+    this.resolutionMode.set('action');
+    this.syncActionForContext();
+  }
+
+  async commitSelectedParticipant(): Promise<void> {
+    const participant = this.selectedParticipant();
+    if (!participant || !this.selectedParticipantEligibleNow()) {
       return;
     }
-    const assignments: Record<string, TurnType> = {};
-    for (const participant of combat.participants) {
-      assignments[participant.id] =
-        previous.fastPCIds.includes(participant.id) || previous.fastNPCIds.includes(participant.id) ? 'fast' : 'slow';
-    }
-    this.roundPlannerAssignments.set(assignments);
-    this.roundPlannerOpen.set(true);
+    await this.commitParticipant(participant.id);
   }
 
-  closeRoundPlanner(): void {
-    this.roundPlannerOpen.set(false);
+  async advancePhase(): Promise<void> {
+    await this.store.advanceCurrentPhase(this.combatId());
+    this.selectFirstEligibleUnresolvedParticipant();
   }
 
-  plannerTempo(participantId: string): TurnType {
-    return this.roundPlannerAssignments()[participantId] ?? 'slow';
-  }
-
-  setPlannerTempo(participantId: string, tempo: TurnType): void {
-    this.roundPlannerAssignments.update((items) => ({ ...items, [participantId]: tempo }));
-  }
-
-  async createNextRound(): Promise<void> {
-    const combat = this.store.combat();
-    if (!combat) {
+  async moveTurn(phase: CombatPhase, turnId: string, direction: -1 | 1): Promise<void> {
+    const round = this.currentRound();
+    if (!round) {
       return;
     }
-    const assignments = this.roundPlannerAssignments();
-    const fastPCIds: string[] = [];
-    const fastNPCIds: string[] = [];
-    const slowPCIds: string[] = [];
-    const slowNPCIds: string[] = [];
-
-    for (const participant of combat.participants) {
-      const tempo = assignments[participant.id] ?? 'slow';
-      if (tempo === 'fast') {
-        if (participant.side === 'pc' || participant.side === 'ally') {
-          fastPCIds.push(participant.id);
-        } else {
-          fastNPCIds.push(participant.id);
-        }
-      } else if (participant.side === 'pc' || participant.side === 'ally') {
-        slowPCIds.push(participant.id);
-      } else {
-        slowNPCIds.push(participant.id);
-      }
-    }
-    await this.store.createRound(this.combatId(), {
-      fastPCIds,
-      fastNPCIds,
-      slowPCIds,
-      slowNPCIds,
-    });
-    this.roundPlannerOpen.set(false);
-    const nextTurn = this.store.combat()?.turns.find((turn) => turn.roundId === this.store.combat()?.rounds.at(-1)?.id);
-    if (nextTurn) {
-      this.selectTurn(nextTurn);
-    }
-  }
-
-  async logAction(): Promise<void> {
-    const turn = this.selectedTurn();
-    const combat = this.store.combat();
-    if (!turn || !combat) {
+    const orderedTurnIds = [...this.phaseQueue(round, phase)];
+    const currentIndex = orderedTurnIds.indexOf(turnId);
+    const nextIndex = currentIndex + direction;
+    if (currentIndex === -1 || nextIndex < 0 || nextIndex >= orderedTurnIds.length) {
       return;
     }
-
-    const round = combat.rounds.find((entry) => entry.id === turn.roundId);
-    const raw = this.actionForm.getRawValue();
-    const actor = combat.participants.find((participant) => participant.id === turn.participantId);
-    const target = combat.participants.find((participant) => participant.id === raw.targetId);
-
-    await this.store.logAction(this.combatId(), {
-      roundId: turn.roundId,
-      turnId: turn.id,
-      actorId: turn.participantId,
-      actionType: raw.actionType,
-      targetIds: this.showTargetField() && raw.targetId ? [raw.targetId] : [],
-      actionCost: ACTION_CATALOG.find((item) => item.key === raw.actionType)?.defaultActionCost ?? 1,
-      focusCost: raw.focusCost,
-      hitResult: raw.hitResult,
-      damageAmount: this.showDamageField() ? raw.damageAmount : 0,
-      note: raw.note,
-      linkedRoll:
-        this.showRollField() && raw.rawD20 > 0
-          ? {
-              actorId: actor?.participantId,
-              actorName: actor?.name,
-              targetId: this.showTargetField() ? target?.participantId : undefined,
-              targetName: this.showTargetField() ? target?.name : undefined,
-              roundNumber: round?.roundNumber,
-              rollCategory: raw.actionType === 'strike' || raw.actionType === 'reactive-strike' ? 'attack' : 'generic',
-              rawD20: raw.rawD20,
-              modifier: raw.modifier,
-              outcome: this.rollOutcomeFromHitResult(raw.hitResult),
-              note: raw.note || undefined,
-            }
-          : undefined,
-    });
-
-    this.actionForm.patchValue({
-      damageAmount: 0,
-      focusCost: this.selectedActionMeta()?.defaultFocusCost ?? 0,
-      note: '',
-    });
-    this.advanceToNextOpenTurn();
+    const [moved] = orderedTurnIds.splice(currentIndex, 1);
+    orderedTurnIds.splice(nextIndex, 0, moved);
+    await this.store.reorderCurrentRound(this.combatId(), { phase, orderedTurnIds });
   }
 
-  async markReaction(): Promise<void> {
+  async completeSelectedTurn(): Promise<void> {
     const turn = this.selectedTurn();
     if (!turn) {
       return;
     }
-    await this.store.updateTurn(this.combatId(), turn.id, { reactionUsed: true });
+    const phase = turn.phase;
+    await this.store.completeTurn(this.combatId(), turn.id);
+    this.selectNextOpenTurn(phase);
+    this.syncActionForContext();
   }
 
-  async adjustHealth(participantId: string, delta: number, reason = 'Manual HP adjustment'): Promise<void> {
+  selectNextTurn(): void {
+    const nextTurn = this.nextOpenTurnCandidate();
+    if (!nextTurn) {
+      return;
+    }
+    this.selectTurn(nextTurn);
+  }
+
+  async logAction(): Promise<void> {
+    const combat = this.store.combat();
+    const round = this.currentRound();
+    const participant = this.selectedParticipant();
+    const action = this.selectedActionMeta();
+    if (!combat || !round || !participant || !action || !this.canSubmitAction()) {
+      return;
+    }
+
+    const raw = this.actionForm.getRawValue();
+    const target = this.selectedTarget();
+    const rawD20 = raw.rawD20;
+    await this.store.logAction(this.combatId(), {
+      roundId: round.id,
+      turnId: this.selectedTurn()?.id || undefined,
+      actorId: participant.id,
+      actionType: raw.actionType,
+      actionKind: raw.actionKind,
+      presetActionId: raw.presetActionId || undefined,
+      targetIds: raw.targetId ? [raw.targetId] : [],
+      actionCost: raw.actionCost,
+      focusCost: raw.focusCost,
+      hitResult: raw.hitResult,
+      damageAmount: raw.damageAmount,
+      damageFormula: raw.damageFormula.trim() || undefined,
+      damageBreakdown: raw.damageBreakdown.trim() || undefined,
+      note: raw.note.trim() || undefined,
+      linkedRoll:
+        rawD20 > 0
+          ? {
+              actorId: participant.participantId,
+              actorName: participant.name,
+              targetId: target?.participantId,
+              targetName: target?.name,
+              roundNumber: round.roundNumber,
+              rollCategory: this.currentActionSupportsDamage() ? 'attack' : 'generic',
+              rawD20,
+              modifier: raw.modifier,
+              opportunityCount: raw.opportunityCount,
+              complicationCount: raw.complicationCount,
+              outcome: this.rollOutcomeFromHitResult(raw.hitResult),
+              note: raw.note.trim() || undefined,
+            }
+          : undefined,
+    });
+
+    this.actionForm.patchValue(
+      {
+        rawD20: 0,
+        hitResult: action.tags.includes('support') ? 'support' : 'neutral',
+        damageAmount: 0,
+        opportunityCount: 0,
+        complicationCount: 0,
+        damageBreakdown: '',
+        note: '',
+      },
+      { emitEvent: false },
+    );
+    this.clearTarget();
+  }
+
+  async saveStrikePreset(): Promise<void> {
+    const participant = this.selectedParticipant();
+    if (!participant) {
+      return;
+    }
+    await this.store.updateStrikePreset(this.combatId(), participant.id, {
+      attackModifier: this.actionForm.controls.modifier.value,
+      damageFormula: this.actionForm.controls.damageFormula.value.trim() || undefined,
+      defaultFocusCost: this.actionForm.controls.focusCost.value,
+    });
+  }
+
+  async spendReaction(): Promise<void> {
+    const participant = this.selectedParticipant();
+    if (!participant) {
+      return;
+    }
+    await this.store.spendReaction(this.combatId(), participant.id);
+  }
+
+  async adjustHealth(participantId: string, delta: number, reason = QUICK_DAMAGE_REASON): Promise<void> {
     await this.store.logHealth(this.combatId(), { participantId, delta, reason });
   }
 
   async adjustFocus(participantId: string, delta: number): Promise<void> {
-    await this.store.logFocus(this.combatId(), { participantId, delta, reason: 'Manual focus adjustment' });
+    await this.store.logFocus(this.combatId(), { participantId, delta, reason: MANUAL_FOCUS_REASON });
   }
 
   async removeCondition(participantId: string, conditionName: string): Promise<void> {
@@ -840,89 +1458,268 @@ export class CombatTrackerPageComponent {
     await this.store.revertAction(this.combatId(), actionEventId);
   }
 
-  selectPinnedAction(actionKey: string): void {
-    this.actionForm.patchValue({ actionType: actionKey });
+  setResolutionMode(mode: ResolutionMode): void {
+    this.resolutionMode.set(mode);
+    this.selectDefaultActionChoice(mode);
   }
 
-  setActionRawD20(value: number): void {
-    this.actionForm.patchValue({ rawD20: value });
+  setRawD20(value: number): void {
+    this.actionForm.patchValue({ rawD20: value }, { emitEvent: false });
   }
 
-  setConditionName(condition: string): void {
-    this.conditionForm.patchValue({ conditionName: condition });
+  clearRawD20(): void {
+    this.actionForm.patchValue({ rawD20: 0 }, { emitEvent: false });
   }
 
-  toggleField(field: 'useTarget' | 'useRoll' | 'trackDamage'): void {
-    const control = this.actionForm.controls[field];
-    const nextValue = !control.value;
-    control.patchValue(nextValue);
-    if (field === 'useTarget' && !nextValue) {
-      this.actionForm.patchValue({ targetId: '' });
+  setHitResult(value: HitResult): void {
+    this.actionForm.patchValue({ hitResult: value }, { emitEvent: false });
+  }
+
+  setOpportunityCount(value: number): void {
+    this.actionForm.patchValue({ opportunityCount: value }, { emitEvent: false });
+  }
+
+  setComplicationCount(value: number): void {
+    this.actionForm.patchValue({ complicationCount: value }, { emitEvent: false });
+  }
+
+  clearTarget(): void {
+    this.setTargetId('');
+  }
+
+  async adjustHealthFromRow(participantId: string, delta: number): Promise<void> {
+    const reason = delta < 0 ? QUICK_DAMAGE_REASON : QUICK_HEALING_REASON;
+    await this.adjustHealth(participantId, delta, reason);
+  }
+
+  commitStatusLabel(participantId: string): string {
+    const combat = this.store.combat();
+    const round = this.currentRound();
+    const participant = combat?.participants.find((entry) => entry.id === participantId);
+    const state = round?.participantStates.find((entry) => entry.participantId === participantId);
+    if (!participant || !round) {
+      return 'Waiting';
     }
-    if (field === 'trackDamage' && !nextValue) {
-      this.actionForm.patchValue({ damageAmount: 0 });
+
+    switch (this.participantCommitState(participant, round.currentPhase, state)) {
+      case 'can-commit':
+        return CAN_COMMIT_NOW_LABEL;
+      case 'later':
+      case 'passed':
+        return this.waitingLabel(participantId);
+      case 'committed':
+        return TURN_ALREADY_COMMITTED_LABEL;
     }
   }
 
-  @HostListener('window:keydown', ['$event'])
-  handleShortcut(event: KeyboardEvent): void {
-    if (this.shouldIgnoreShortcut(event)) {
-      return;
+  selectedParticipantEligibleNow(): boolean {
+    const participant = this.selectedParticipant();
+    const round = this.currentRound();
+    const state = this.selectedParticipantState();
+    if (!participant || !round) {
+      return false;
     }
-    if (event.key >= '1' && event.key <= '6') {
-      const index = Number(event.key) - 1;
-      const key = this.pinnedActionKeys[index];
-      if (key) {
-        event.preventDefault();
-        this.selectPinnedAction(key);
-      }
-      return;
-    }
-    if (event.key.toLowerCase() === 'r') {
-      event.preventDefault();
-      void this.markReaction();
-      return;
-    }
-    if (event.key.toLowerCase() === 'n') {
-      event.preventDefault();
-      this.openRoundPlanner();
-      return;
-    }
-    if (event.key === 'Enter' && this.selectedTurn()) {
-      event.preventDefault();
-      void this.logAction();
-    }
+    return this.participantCommitState(participant, round.currentPhase, state) === 'can-commit';
   }
 
-  private turnsForGroup(ids: string[], roundId: string): CombatTurn[] {
-    return (
-      this.store
-        .combat()
-        ?.turns.filter((turn) => turn.roundId === roundId && ids.includes(turn.participantId))
-        .sort((left, right) => left.participantId.localeCompare(right.participantId)) ?? []
+  private clearSelection(): void {
+    this.selectedParticipantId.set('');
+    this.selectedTurnId.set('');
+    this.clearTarget();
+  }
+
+  togglePhaseGroup(phase: CombatPhase): void {
+    const expanded = this.expandedPhaseGroups();
+    this.expandedPhaseGroups.set(
+      expanded.includes(phase) ? expanded.filter((entry) => entry !== phase) : [...expanded, phase],
     );
   }
 
-  private shouldIgnoreShortcut(event: KeyboardEvent): boolean {
-    const target = event.target as HTMLElement | null;
-    if (!target) {
-      return false;
-    }
-    const tagName = target.tagName.toLowerCase();
-    return tagName === 'input' || tagName === 'textarea' || tagName === 'select' || target.isContentEditable;
+  isPhaseGroupExpanded(phase: CombatPhase): boolean {
+    return this.expandedPhaseGroups().includes(phase);
   }
 
-  private applyActionDefaults(actionType: string): void {
-    const item = this.actionCatalog.find((entry) => entry.key === actionType);
-    this.actionForm.patchValue({
-      useTarget: item?.requiresTarget ?? false,
-      useRoll: Boolean(item?.requiresRoll || item?.tags.includes('test')),
-      trackDamage: item?.supportsDamage ?? false,
-      focusCost: item?.defaultFocusCost ?? 0,
-      targetId: item?.requiresTarget ? this.actionForm.controls.targetId.value : '',
-      damageAmount: item?.supportsDamage ? this.actionForm.controls.damageAmount.value : 0,
-      hitResult: item?.tags.includes('support') ? 'support' : 'neutral',
-    });
+  phaseGroupSummary(group: PhaseGroup): string {
+    if (!group.turns.length) {
+      return 'No committed turns';
+    }
+    if (group.turns.length === 1) {
+      return `${this.participantName(group.turns[0].participantId)} queued`;
+    }
+    return `${group.turns.length} turns queued`;
+  }
+
+  selectActionChoice(choiceId: string): void {
+    const choice = this.allActionChoices().find((entry) => entry.id === choiceId);
+    if (!choice) {
+      return;
+    }
+    this.selectedActionChoiceId.set(choice.id);
+    this.actionType.set(choice.actionType);
+    this.actionForm.patchValue(
+      {
+        actionType: choice.actionType,
+        actionKind: choice.actionKind,
+        presetActionId: choice.presetActionId ?? '',
+      },
+      { emitEvent: false },
+    );
+    this.applyActionDefaults(choice);
+  }
+
+  setTargetId(targetId: string): void {
+    this.targetId.set(targetId);
+    this.actionForm.patchValue({ targetId }, { emitEvent: false });
+  }
+
+  private isEligibleForCurrentPhase(participant: CombatRecord['participants'][number], phase: CombatPhase): boolean {
+    return PC_PHASES.includes(phase) ? participant.side === PLAYER_SIDE : participant.side !== PLAYER_SIDE;
+  }
+
+  private isEligibleForCurrentPhaseId(participantId: string): boolean {
+    const participant = this.store.combat()?.participants.find((entry) => entry.id === participantId);
+    const round = this.currentRound();
+    if (!participant || !round) {
+      return false;
+    }
+    return this.isEligibleForCurrentPhase(participant, round.currentPhase);
+  }
+
+  private participantCommitState(
+    participant: CombatRecord['participants'][number],
+    phase: CombatPhase,
+    state?: CombatRound['participantStates'][number] | null,
+  ): 'can-commit' | 'later' | 'passed' | 'committed' {
+    if (state?.turnId) {
+      return 'committed';
+    }
+
+    if (this.isEligibleForCurrentPhase(participant, phase)) {
+      return 'can-commit';
+    }
+
+    if (participant.side === PLAYER_SIDE) {
+      return phase === 'slow-npc' ? 'passed' : 'later';
+    }
+
+    return 'later';
+  }
+
+  private selectNextOpenTurn(phase: CombatPhase): void {
+    const group = this.phaseGroups().find((entry) => entry.phase === phase);
+    const nextTurn = group?.turns.find((turn) => turn.status === 'open') ?? null;
+    if (nextTurn) {
+      this.selectTurn(nextTurn);
+      return;
+    }
+    this.selectFirstEligibleUnresolvedParticipant();
+  }
+
+  private syncActionForContext(): void {
+    const participant = this.selectedParticipant();
+    const turn = this.selectedTurn();
+    const nextMode: ResolutionMode =
+      turn?.status === 'open' || this.selectedParticipantEligibleNow() ? 'action' : 'reaction';
+    this.resolutionMode.set(participant ? nextMode : 'action');
+    this.selectDefaultActionChoice(participant ? nextMode : 'action');
+    this.normalizeTargetForSelectedParticipant();
+  }
+
+  private nextOpenTurnCandidate(): CombatTurn | null {
+    const selectedTurn = this.selectedTurn();
+    const round = this.currentRound();
+    if (!selectedTurn || selectedTurn.status !== 'open' || !round) {
+      return null;
+    }
+    if (selectedTurn.actionsUsed < selectedTurn.actionsAvailable) {
+      return null;
+    }
+
+    const activeGroup = this.phaseGroups().find((group) => group.phase === round.currentPhase);
+    if (!activeGroup) {
+      return null;
+    }
+
+    return (
+      activeGroup.turns.find(
+        (turn) =>
+          turn.id !== selectedTurn.id && turn.status === 'open' && turn.actionsUsed < turn.actionsAvailable,
+      ) ?? null
+    );
+  }
+
+  private turnExhausted(): boolean {
+    const turn = this.selectedTurn();
+    return Boolean(turn?.status === 'open' && turn.actionsUsed >= turn.actionsAvailable);
+  }
+
+  private isFlexibleCustomAction(): boolean {
+    const action = this.selectedActionMeta();
+    return Boolean(action?.source === 'catalog' && CUSTOM_ACTION_KEYS.has(action.actionType));
+  }
+
+  private selectFirstEligibleUnresolvedParticipant(): void {
+    const firstEligible = this.readyParticipants()[0]?.participant ?? null;
+    if (firstEligible) {
+      this.selectParticipant(firstEligible.id);
+      return;
+    }
+    this.clearSelection();
+    this.syncActionForContext();
+  }
+
+  private normalizeTargetForSelectedParticipant(): void {
+    const participant = this.selectedParticipant();
+    if (!participant) {
+      this.clearTarget();
+      return;
+    }
+    if (this.targetId() === participant.id) {
+      this.clearTarget();
+    }
+  }
+
+  private applyActionDefaults(action: ResolutionActionChoice): void {
+    const strikePreset = this.selectedParticipant()?.defaultStrikePreset;
+    const isStrike = action.source === 'catalog' && action.actionType === DEFAULT_STRIKE_ACTION_KEY;
+    const defaultFocusCost = isStrike
+      ? strikePreset?.defaultFocusCost ?? action.defaultFocusCost
+      : action.defaultFocusCost;
+
+    this.actionForm.patchValue(
+      {
+        actionType: action.actionType,
+        actionKind: action.actionKind,
+        presetActionId: action.presetActionId ?? '',
+        actionCost: action.defaultActionCost,
+        focusCost: defaultFocusCost,
+        modifier: isStrike ? strikePreset?.attackModifier ?? 0 : action.defaultModifier ?? 0,
+        hitResult: action.tags.includes('support') ? 'support' : 'neutral',
+        damageFormula: isStrike ? strikePreset?.damageFormula ?? '' : action.defaultDamageFormula ?? '',
+        damageAmount: 0,
+        rawD20: 0,
+        opportunityCount: 0,
+        complicationCount: 0,
+        damageBreakdown: '',
+        note: '',
+      },
+      { emitEvent: false },
+    );
+  }
+
+  private selectDefaultActionChoice(mode: ResolutionMode): void {
+    const defaultChoice =
+      mode === 'reaction'
+        ? this.handbookFallbackReactionChoice() ?? this.handbookReactionChoices()[0] ?? null
+        : this.handbookActionChoices().find((choice) => choice.actionType === DEFAULT_STRIKE_ACTION_KEY) ??
+          this.handbookActionChoices()[0] ??
+          this.handbookFallbackActionChoice() ??
+          null;
+
+    if (!defaultChoice) {
+      return;
+    }
+    this.selectActionChoice(defaultChoice.id);
   }
 
   private rollOutcomeFromHitResult(hitResult: HitResult) {
@@ -940,35 +1737,5 @@ export class CombatTrackerPageComponent {
       default:
         return 'neutral' as const;
     }
-  }
-
-  private advanceToNextOpenTurn(): void {
-    const combat = this.store.combat();
-    const currentTurn = this.selectedTurn();
-    if (!combat || !currentTurn) {
-      return;
-    }
-    const currentRoundId = currentTurn.roundId;
-    const round = combat.rounds.find((entry) => entry.id === currentRoundId);
-    const roundOrder = round
-      ? [...round.fastPCIds, ...round.fastNPCIds, ...round.slowPCIds, ...round.slowNPCIds]
-      : [];
-    const roundTurns = roundOrder
-      .map((participantId) =>
-        combat.turns.find((turn) => turn.roundId === currentRoundId && turn.participantId === participantId),
-      )
-      .filter((turn): turn is CombatTurn => Boolean(turn));
-    const nextOpenTurn = roundTurns.find(
-      (turn) => turn.id !== currentTurn.id && turn.actionsUsed < turn.actionsAvailable,
-    );
-    if (nextOpenTurn) {
-      this.selectTurn(nextOpenTurn);
-      return;
-    }
-    const refreshedCurrent = combat.turns.find((turn) => turn.id === currentTurn.id);
-    if (refreshedCurrent) {
-      this.selectTurn(refreshedCurrent);
-    }
-    this.roundStatus.set('Round complete');
   }
 }

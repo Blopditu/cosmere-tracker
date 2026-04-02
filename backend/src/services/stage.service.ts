@@ -1,12 +1,14 @@
 import { randomUUID } from 'node:crypto';
-import { LiveStageState, StageScene } from '@shared/domain';
+import { ImportStageScenesInput, ImportStageScenesResult, LiveStageState, StageScene } from '@shared/domain';
 import { HttpError } from '../lib/http';
 import { nowIso } from '../lib/time';
 import { LiveStageRepository } from '../repositories/live-stage.repository';
+import { SessionRepository } from '../repositories/session.repository';
 import { StageSceneRepository } from '../repositories/stage-scene.repository';
 
 export class StageService {
   constructor(
+    private readonly sessionRepository: SessionRepository,
     private readonly stageSceneRepository: StageSceneRepository,
     private readonly liveStageRepository: LiveStageRepository,
   ) {}
@@ -21,6 +23,10 @@ export class StageService {
     sessionId: string,
     input: Pick<StageScene, 'title' | 'backgroundImagePath' | 'youtubeUrl' | 'gmNotes' | 'order'>,
   ): Promise<StageScene> {
+    const session = await this.sessionRepository.get(sessionId);
+    if (!session) {
+      throw new HttpError(404, 'Session not found.');
+    }
     const scene: StageScene = {
       id: randomUUID(),
       sessionId,
@@ -34,6 +40,60 @@ export class StageService {
     };
     await this.stageSceneRepository.upsert(scene);
     return scene;
+  }
+
+  async importScenes(sessionId: string, input: ImportStageScenesInput): Promise<ImportStageScenesResult> {
+    const sourceSessionId = String(input.sourceSessionId || '').trim();
+    const sourceSceneIds = Array.isArray(input.sourceSceneIds)
+      ? input.sourceSceneIds.map((sceneId) => String(sceneId || '').trim()).filter(Boolean)
+      : [];
+
+    if (!sourceSessionId) {
+      throw new HttpError(400, 'Source session is required.');
+    }
+
+    if (sourceSessionId === sessionId) {
+      throw new HttpError(400, 'Source and target sessions must differ.');
+    }
+
+    if (!sourceSceneIds.length) {
+      throw new HttpError(400, 'Select at least one source scene.');
+    }
+
+    const [targetSession, sourceSession] = await Promise.all([
+      this.sessionRepository.get(sessionId),
+      this.sessionRepository.get(sourceSessionId),
+    ]);
+
+    if (!targetSession || !sourceSession) {
+      throw new HttpError(404, 'Session not found.');
+    }
+
+    const scenes = await this.stageSceneRepository.list();
+    const sourceScenes = scenes
+      .filter((scene) => scene.sessionId === sourceSessionId)
+      .sort((left, right) => left.order - right.order);
+    const targetScenes = scenes.filter((scene) => scene.sessionId === sessionId);
+    const selectedSceneIds = new Set(sourceSceneIds);
+    const selectedSourceScenes = sourceScenes.filter((scene) => selectedSceneIds.has(scene.id));
+
+    if (selectedSourceScenes.length !== selectedSceneIds.size) {
+      throw new HttpError(400, 'One or more selected source scenes could not be found.');
+    }
+
+    const timestamp = nowIso();
+    const maxOrder = targetScenes.reduce((highest, scene) => Math.max(highest, scene.order), 0);
+    const importedScenes = selectedSourceScenes.map((scene, index) => ({
+      ...scene,
+      id: randomUUID(),
+      sessionId,
+      order: maxOrder + index + 1,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    }));
+
+    await this.stageSceneRepository.saveAll([...scenes, ...importedScenes]);
+    return { importedScenes };
   }
 
   async updateScene(sceneId: string, patch: Partial<StageScene>): Promise<StageScene> {

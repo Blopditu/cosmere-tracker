@@ -40,6 +40,8 @@ export class RollService {
       rawD20: input.rawD20,
       modifier: input.modifier,
       total: input.rawD20 + input.modifier,
+      opportunityCount: input.opportunityCount,
+      complicationCount: input.complicationCount,
       advantageNote: input.advantageNote,
       plotDie: input.plotDie,
       outcome: normalizeOutcome(input.rawD20, input.outcome),

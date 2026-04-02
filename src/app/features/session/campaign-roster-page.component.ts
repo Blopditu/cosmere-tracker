@@ -3,11 +3,12 @@ import { Component, signal, inject } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ParticipantTemplate, PartyMember } from '@shared/domain';
 import { SessionStoreService } from '../../core/session-store.service';
+import { CombatPresetActionEditorComponent } from '../../shared/combat-preset-action-editor.component';
 import { RosharIconComponent } from '../../shared/roshar-icon.component';
 
 @Component({
   selector: 'app-campaign-roster-page',
-  imports: [CommonModule, FormsModule, RosharIconComponent],
+  imports: [CommonModule, FormsModule, RosharIconComponent, CombatPresetActionEditorComponent],
   template: `
     <section class="page-header campaign-roster-header card engraved-panel">
       <div class="route-heading">
@@ -101,6 +102,12 @@ import { RosharIconComponent } from '../../shared/roshar-icon.component';
                   }
                 </div>
                 <button type="button" class="button-outline button-danger micro-button" (click)="confirmRosterRemoval('enemy', enemy.id, enemy.name)">Remove</button>
+                <app-combat-preset-action-editor
+                  class="roster-preset-editor"
+                  [actions]="enemy.presetActions"
+                  title="Enemy preset actions"
+                  emptyLabel="No preset actions yet. Add reusable enemy actions here."
+                  (actionsChange)="updateEnemyPresetActions(enemy.id, $event)" />
               </article>
             } @empty {
               <article class="empty-card">No enemy templates yet. Add reusable foes here so combat setup can clone them into new encounters.</article>
@@ -152,7 +159,7 @@ export class CampaignRosterPageComponent {
   async load(): Promise<void> {
     const roster = await this.sessionStore.getCampaignRoster();
     this.partyDraft.set(roster.partyMembers.map((member) => ({ ...member })));
-    this.enemyDraft.set(roster.participantTemplates.map((template) => ({ ...template })));
+    this.enemyDraft.set(roster.participantTemplates.map((template) => ({ ...template, presetActions: [...template.presetActions] })));
   }
 
   addPartyMember(): void {
@@ -179,8 +186,15 @@ export class CampaignRosterPageComponent {
         role: '',
         maxHealth: undefined,
         maxFocus: undefined,
+        presetActions: [],
       },
     ]);
+  }
+
+  updateEnemyPresetActions(enemyId: string, presetActions: ParticipantTemplate['presetActions']): void {
+    this.enemyDraft.update((items) =>
+      items.map((enemy) => (enemy.id === enemyId ? { ...enemy, presetActions: [...presetActions] } : enemy)),
+    );
   }
 
   confirmRosterRemoval(type: 'party' | 'enemy', id: string, label: string | undefined): void {
@@ -275,6 +289,7 @@ export class CampaignRosterPageComponent {
       maxHealth: template.maxHealth ?? undefined,
       maxFocus: template.maxFocus ?? undefined,
       imagePath: template.imagePath || undefined,
+      presetActions: template.presetActions,
     };
   }
 }

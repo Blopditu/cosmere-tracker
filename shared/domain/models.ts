@@ -3,6 +3,8 @@ export type RollCategory = 'attack' | 'skill' | 'defense' | 'recovery' | 'injury
 export type RollOutcome = 'success' | 'failure' | 'criticalSuccess' | 'criticalFailure' | 'graze' | 'neutral';
 export type CombatStatus = 'planned' | 'active' | 'finished';
 export type TurnType = 'fast' | 'slow';
+export type CombatPhase = 'fast-pc' | 'fast-npc' | 'slow-pc' | 'slow-npc';
+export type CombatTurnStatus = 'open' | 'complete';
 export type ActionKind = 'action' | 'reaction' | 'free';
 export type ConditionOperation = 'add' | 'remove';
 export type HitResult = 'hit' | 'miss' | 'criticalHit' | 'criticalMiss' | 'graze' | 'support' | 'neutral';
@@ -50,6 +52,7 @@ export interface ParticipantTemplate {
   maxFocus?: number;
   notes?: string;
   imagePath?: string;
+  presetActions: CombatPresetAction[];
 }
 
 export interface RollEvent {
@@ -66,6 +69,8 @@ export interface RollEvent {
   rawD20: number;
   modifier: number;
   total: number;
+  opportunityCount?: number;
+  complicationCount?: number;
   advantageNote?: string;
   plotDie?: number;
   outcome: RollOutcome;
@@ -82,7 +87,30 @@ export interface ActionCatalogItem {
   requiresTarget: boolean;
   requiresRoll: boolean;
   supportsDamage: boolean;
+  repeatablePerTurn?: boolean;
+  warnOncePerCombat?: boolean;
+  variableActionCost?: boolean;
+  helperText?: string;
   tags: string[];
+}
+
+export interface CombatStrikePreset {
+  attackModifier: number;
+  damageFormula?: string;
+  defaultFocusCost?: number;
+}
+
+export interface CombatPresetAction {
+  id: string;
+  name: string;
+  kind: ActionKind;
+  actionCost: number;
+  focusCost: number;
+  requiresTarget: boolean;
+  requiresRoll: boolean;
+  supportsDamage: boolean;
+  defaultModifier?: number;
+  defaultDamageFormula?: string;
 }
 
 export interface CombatParticipantState {
@@ -91,6 +119,8 @@ export interface CombatParticipantState {
   participantId: string;
   name: string;
   side: ParticipantSide;
+  defaultStrikePreset?: CombatStrikePreset;
+  presetActions: CombatPresetAction[];
   imagePath?: string;
   maxHealth?: number;
   currentHealth?: number;
@@ -104,11 +134,12 @@ export interface CombatTurn {
   combatId: string;
   roundId: string;
   participantId: string;
+  phase: CombatPhase;
   turnType: TurnType;
+  status: CombatTurnStatus;
+  order: number;
   actionsAvailable: number;
   actionsUsed: number;
-  reactionAvailable: boolean;
-  reactionUsed: boolean;
   focusAtStart: number;
   focusAtEnd: number;
   damageDealt: number;
@@ -118,31 +149,49 @@ export interface CombatTurn {
   notes?: string;
 }
 
+export interface CombatRoundParticipantState {
+  participantId: string;
+  turnId?: string;
+  turnType?: TurnType;
+  turnStatus?: CombatTurnStatus;
+  reactionAvailable: boolean;
+  committedAt?: string;
+  completedAt?: string;
+}
+
 export interface CombatRound {
   id: string;
   combatId: string;
   roundNumber: number;
-  fastPCIds: string[];
-  fastNPCIds: string[];
-  slowPCIds: string[];
-  slowNPCIds: string[];
+  currentPhase: CombatPhase;
+  participantStates: CombatRoundParticipantState[];
+  fastPCQueueIds: string[];
+  fastNPCQueueIds: string[];
+  slowPCQueueIds: string[];
+  slowNPCQueueIds: string[];
   turnIds: string[];
   createdAt: string;
+  completedAt?: string;
 }
 
 export interface ActionEvent {
   id: string;
   combatId: string;
   roundId: string;
-  turnId: string;
+  turnId?: string;
   actorId: string;
   actionType: string;
+  actionKind: ActionKind;
+  presetActionId?: string;
   targetIds: string[];
   actionCost: number;
   focusCost: number;
   linkedRollId?: string;
   hitResult?: HitResult;
   damageAmount?: number;
+  damageFormula?: string;
+  damageBreakdown?: string;
+  actionLabel?: string;
   note?: string;
   timestamp: string;
 }
@@ -221,6 +270,15 @@ export interface StageScene {
   order: number;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface ImportStageScenesInput {
+  sourceSessionId: string;
+  sourceSceneIds: string[];
+}
+
+export interface ImportStageScenesResult {
+  importedScenes: StageScene[];
 }
 
 export interface LiveStageState {
@@ -360,6 +418,8 @@ export interface CreateRollInput {
   rollCategory: RollCategory;
   rawD20: number;
   modifier: number;
+  opportunityCount?: number;
+  complicationCount?: number;
   advantageNote?: string;
   plotDie?: number;
   outcome?: RollOutcome;
@@ -373,48 +433,45 @@ export interface CreateCombatInput {
     participantId: string;
     name: string;
     side: ParticipantSide;
+    presetActions?: CombatPresetAction[];
     imagePath?: string;
     maxHealth?: number;
     currentHealth?: number;
     maxFocus?: number;
     currentFocus?: number;
   }>;
-  initialRound?: {
-    fastPCIds: string[];
-    fastNPCIds: string[];
-    slowPCIds: string[];
-    slowNPCIds: string[];
-  };
 }
 
-export interface CreateRoundInput {
-  fastPCIds: string[];
-  fastNPCIds: string[];
-  slowPCIds: string[];
-  slowNPCIds: string[];
+export interface CommitCurrentRoundInput {
+  participantId: string;
 }
 
-export interface UpdateTurnInput {
-  actionsUsed?: number;
-  reactionUsed?: boolean;
-  focusAtEnd?: number;
-  damageDealt?: number;
-  damageTaken?: number;
-  startedAt?: string;
-  endedAt?: string;
-  notes?: string;
+export interface ReorderCurrentRoundInput {
+  phase: CombatPhase;
+  orderedTurnIds: string[];
+}
+
+export interface UpdateCombatStrikePresetInput {
+  attackModifier: number;
+  damageFormula?: string;
+  defaultFocusCost?: number;
 }
 
 export interface CreateActionEventInput {
   roundId: string;
-  turnId: string;
+  turnId?: string;
   actorId: string;
   actionType: string;
+  actionKind: ActionKind;
+  presetActionId?: string;
   targetIds: string[];
   actionCost: number;
   focusCost: number;
   hitResult?: HitResult;
   damageAmount?: number;
+  damageFormula?: string;
+  damageBreakdown?: string;
+  actionLabel?: string;
   note?: string;
   linkedRoll?: CreateRollInput;
 }
@@ -497,19 +554,23 @@ export interface ImportResult {
 }
 
 export const ACTION_CATALOG: ActionCatalogItem[] = [
-  { key: 'strike', name: 'Strike', type: 'action', defaultActionCost: 1, defaultFocusCost: 0, requiresTarget: true, requiresRoll: true, supportsDamage: true, tags: ['attack', 'test'] },
-  { key: 'move', name: 'Move', type: 'action', defaultActionCost: 1, defaultFocusCost: 0, requiresTarget: false, requiresRoll: false, supportsDamage: false, tags: ['movement'] },
   { key: 'brace', name: 'Brace', type: 'action', defaultActionCost: 1, defaultFocusCost: 0, requiresTarget: false, requiresRoll: false, supportsDamage: false, tags: ['defense'] },
   { key: 'disengage', name: 'Disengage', type: 'action', defaultActionCost: 1, defaultFocusCost: 0, requiresTarget: false, requiresRoll: false, supportsDamage: false, tags: ['movement'] },
-  { key: 'gain-advantage', name: 'Gain Advantage', type: 'action', defaultActionCost: 1, defaultFocusCost: 0, requiresTarget: false, requiresRoll: false, supportsDamage: false, tags: ['setup'] },
-  { key: 'interact-skill', name: 'Interact / Use Skill', type: 'action', defaultActionCost: 1, defaultFocusCost: 0, requiresTarget: false, requiresRoll: true, supportsDamage: false, tags: ['utility', 'test'] },
+  { key: 'gain-advantage', name: 'Gain Advantage', type: 'action', defaultActionCost: 1, defaultFocusCost: 0, requiresTarget: true, requiresRoll: true, supportsDamage: false, tags: ['setup', 'test'] },
   { key: 'grapple', name: 'Grapple', type: 'action', defaultActionCost: 1, defaultFocusCost: 0, requiresTarget: true, requiresRoll: true, supportsDamage: false, tags: ['control', 'test'] },
-  { key: 'ready', name: 'Ready', type: 'action', defaultActionCost: 1, defaultFocusCost: 0, requiresTarget: false, requiresRoll: false, supportsDamage: false, tags: ['setup'] },
-  { key: 'recover', name: 'Recover', type: 'action', defaultActionCost: 1, defaultFocusCost: 0, requiresTarget: false, requiresRoll: false, supportsDamage: false, tags: ['recovery'] },
+  { key: 'interact', name: 'Interact', type: 'action', defaultActionCost: 1, defaultFocusCost: 0, requiresTarget: false, requiresRoll: false, supportsDamage: false, repeatablePerTurn: true, tags: ['utility'] },
+  { key: 'move', name: 'Move', type: 'action', defaultActionCost: 1, defaultFocusCost: 0, requiresTarget: false, requiresRoll: false, supportsDamage: false, repeatablePerTurn: true, tags: ['movement'] },
+  { key: 'ready', name: 'Ready', type: 'action', defaultActionCost: 2, defaultFocusCost: 0, requiresTarget: false, requiresRoll: false, supportsDamage: false, variableActionCost: true, helperText: 'Use Ready plus the cost of the readied action.', tags: ['setup'] },
+  { key: 'recover', name: 'Recover', type: 'action', defaultActionCost: 1, defaultFocusCost: 0, requiresTarget: false, requiresRoll: false, supportsDamage: false, warnOncePerCombat: true, tags: ['recovery'] },
   { key: 'shove', name: 'Shove', type: 'action', defaultActionCost: 1, defaultFocusCost: 0, requiresTarget: true, requiresRoll: true, supportsDamage: false, tags: ['control', 'test'] },
-  { key: 'aid', name: 'Aid', type: 'action', defaultActionCost: 1, defaultFocusCost: 0, requiresTarget: true, requiresRoll: false, supportsDamage: false, tags: ['support', 'test'] },
-  { key: 'dodge', name: 'Dodge', type: 'action', defaultActionCost: 1, defaultFocusCost: 0, requiresTarget: false, requiresRoll: false, supportsDamage: false, tags: ['defense'] },
-  { key: 'reactive-strike', name: 'Reactive Strike', type: 'reaction', defaultActionCost: 0, defaultFocusCost: 0, requiresTarget: true, requiresRoll: true, supportsDamage: true, tags: ['reaction', 'attack', 'test'] },
+  { key: 'strike', name: 'Strike', type: 'action', defaultActionCost: 1, defaultFocusCost: 0, requiresTarget: true, requiresRoll: true, supportsDamage: true, repeatablePerTurn: true, helperText: 'Multiple strikes per turn must use different hands. Offhand strike costs 2 focus.', tags: ['attack', 'test'] },
+  { key: 'use-a-skill', name: 'Use a Skill', type: 'action', defaultActionCost: 1, defaultFocusCost: 0, requiresTarget: false, requiresRoll: true, supportsDamage: false, tags: ['utility', 'test'] },
+  { key: 'banter', name: 'Banter', type: 'free', defaultActionCost: 0, defaultFocusCost: 0, requiresTarget: false, requiresRoll: false, supportsDamage: false, tags: ['speech'] },
+  { key: 'drop', name: 'Drop', type: 'free', defaultActionCost: 0, defaultFocusCost: 0, requiresTarget: false, requiresRoll: false, supportsDamage: false, tags: ['utility'] },
+  { key: 'aid', name: 'Aid', type: 'reaction', defaultActionCost: 0, defaultFocusCost: 1, requiresTarget: true, requiresRoll: false, supportsDamage: false, tags: ['reaction', 'support'] },
   { key: 'avoid-danger', name: 'Avoid Danger', type: 'reaction', defaultActionCost: 0, defaultFocusCost: 0, requiresTarget: false, requiresRoll: true, supportsDamage: false, tags: ['reaction', 'defense', 'test'] },
+  { key: 'dodge', name: 'Dodge', type: 'reaction', defaultActionCost: 0, defaultFocusCost: 1, requiresTarget: false, requiresRoll: false, supportsDamage: false, tags: ['reaction', 'defense'] },
+  { key: 'reactive-strike', name: 'Reactive Strike', type: 'reaction', defaultActionCost: 0, defaultFocusCost: 1, requiresTarget: true, requiresRoll: true, supportsDamage: true, tags: ['reaction', 'attack', 'test'] },
   { key: 'custom', name: 'Custom', type: 'action', defaultActionCost: 1, defaultFocusCost: 0, requiresTarget: false, requiresRoll: false, supportsDamage: false, tags: ['custom'] },
+  { key: 'custom-reaction', name: 'Custom Reaction', type: 'reaction', defaultActionCost: 0, defaultFocusCost: 0, requiresTarget: false, requiresRoll: false, supportsDamage: false, tags: ['custom', 'reaction'] },
 ];

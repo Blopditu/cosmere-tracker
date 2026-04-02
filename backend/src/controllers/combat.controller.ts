@@ -28,25 +28,36 @@ export class CombatController {
     response.json(await this.combatService.finish(String(request.params['combatId'])));
   };
 
-  createRound = async (request: Request, response: Response) => {
-    response.status(201).json(await this.combatService.createRound(String(request.params['combatId']), request.body));
+  commitCurrentRound = async (request: Request, response: Response) => {
+    response.status(201).json(await this.combatService.commitCurrentRound(String(request.params['combatId']), request.body));
   };
 
-  updateRound = async (request: Request, response: Response) => {
+  advanceCurrentPhase = async (request: Request, response: Response) => {
+    response.json(await this.combatService.advanceCurrentPhase(String(request.params['combatId'])));
+  };
+
+  reorderCurrentRound = async (request: Request, response: Response) => {
+    response.json(await this.combatService.reorderCurrentRound(String(request.params['combatId']), request.body));
+  };
+
+  completeTurn = async (request: Request, response: Response) => {
+    response.json(await this.combatService.completeTurn(String(request.params['combatId']), String(request.params['turnId'])));
+  };
+
+  spendReaction = async (request: Request, response: Response) => {
     response.json(
-      await this.combatService.updateRound(
+      await this.combatService.spendReaction(
         String(request.params['combatId']),
-        String(request.params['roundId']),
-        request.body,
+        String(request.params['participantId']),
       ),
     );
   };
 
-  updateTurn = async (request: Request, response: Response) => {
+  updateStrikePreset = async (request: Request, response: Response) => {
     response.json(
-      await this.combatService.updateTurn(
+      await this.combatService.updateStrikePreset(
         String(request.params['combatId']),
-        String(request.params['turnId']),
+        String(request.params['participantId']),
         request.body,
       ),
     );

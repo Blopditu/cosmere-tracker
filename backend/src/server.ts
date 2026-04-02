@@ -94,7 +94,7 @@ const sessionService = new SessionService(
   liveStageRepository,
 );
 const combatService = new CombatService(combatRepository, sessionRepository, rollService);
-const stageService = new StageService(stageSceneRepository, liveStageRepository);
+const stageService = new StageService(sessionRepository, stageSceneRepository, liveStageRepository);
 const rulesEngineService = new RulesEngineService();
 const simulationService = new SimulationService({
   simulations: new SqliteJsonRepository<SimulationDefinition>(campaignDatabase, 'simulation_definitions'),

@@ -2,13 +2,14 @@ import { Injectable, signal } from '@angular/core';
 import {
   CombatRecord,
   CombatSummary,
+  CommitCurrentRoundInput,
   CreateActionEventInput,
   CreateCombatInput,
   CreateConditionEventInput,
   CreateFocusEventInput,
   CreateHealthEventInput,
-  CreateRoundInput,
-  UpdateTurnInput,
+  ReorderCurrentRoundInput,
+  UpdateCombatStrikePresetInput,
 } from '@shared/domain';
 import { ApiService } from '../../core/api.service';
 
@@ -64,12 +65,32 @@ export class CombatStore {
     this.syncCombatRecord(await this.api.post<CombatRecord>(`/api/combats/${combatId}/finish`, {}));
   }
 
-  async createRound(combatId: string, input: CreateRoundInput): Promise<void> {
-    this.syncCombatRecord(await this.api.post<CombatRecord>(`/api/combats/${combatId}/rounds`, input));
+  async commitCurrentRound(combatId: string, input: CommitCurrentRoundInput): Promise<void> {
+    this.syncCombatRecord(await this.api.post<CombatRecord>(`/api/combats/${combatId}/rounds/current/commit`, input));
   }
 
-  async updateTurn(combatId: string, turnId: string, patch: UpdateTurnInput): Promise<void> {
-    this.syncCombatRecord(await this.api.patch<CombatRecord>(`/api/combats/${combatId}/turns/${turnId}`, patch));
+  async advanceCurrentPhase(combatId: string): Promise<void> {
+    this.syncCombatRecord(await this.api.post<CombatRecord>(`/api/combats/${combatId}/rounds/current/advance`, {}));
+  }
+
+  async reorderCurrentRound(combatId: string, input: ReorderCurrentRoundInput): Promise<void> {
+    this.syncCombatRecord(await this.api.post<CombatRecord>(`/api/combats/${combatId}/rounds/current/reorder`, input));
+  }
+
+  async completeTurn(combatId: string, turnId: string): Promise<void> {
+    this.syncCombatRecord(await this.api.post<CombatRecord>(`/api/combats/${combatId}/turns/${turnId}/complete`, {}));
+  }
+
+  async spendReaction(combatId: string, participantId: string): Promise<void> {
+    this.syncCombatRecord(
+      await this.api.post<CombatRecord>(`/api/combats/${combatId}/participants/${participantId}/reaction/spend`, {}),
+    );
+  }
+
+  async updateStrikePreset(combatId: string, participantId: string, input: UpdateCombatStrikePresetInput): Promise<void> {
+    this.syncCombatRecord(
+      await this.api.patch<CombatRecord>(`/api/combats/${combatId}/participants/${participantId}/strike-preset`, input),
+    );
   }
 
   async logAction(combatId: string, input: CreateActionEventInput): Promise<void> {
