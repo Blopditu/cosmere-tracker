@@ -1,6 +1,5 @@
 import { CommonModule } from '@angular/common';
-import { Component, DestroyRef, inject, signal } from '@angular/core';
-import { FormsModule } from '@angular/forms';
+import { ChangeDetectionStrategy, Component, DestroyRef, computed, inject, signal } from '@angular/core';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import {
   CharacterStatSheet,
@@ -17,9 +16,14 @@ import { CharacterStatSheetEditorComponent } from '../../shared/character-stat-s
 import { RosharIconComponent } from '../../shared/roshar-icon.component';
 import { CombatStore } from '../combat-tracker/combat.store';
 
+const PARTY_VIEW = 'party';
+const ENEMY_VIEW = 'enemy';
+type RosterView = typeof PARTY_VIEW | typeof ENEMY_VIEW;
+
 @Component({
   selector: 'app-session-dashboard-page',
-  imports: [CommonModule, FormsModule, RouterLink, RosharIconComponent, CombatPresetActionEditorComponent, CharacterStatSheetEditorComponent],
+  imports: [CommonModule, RouterLink, RosharIconComponent, CombatPresetActionEditorComponent, CharacterStatSheetEditorComponent],
+  changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     @if (dashboard()) {
       <section class="page-header session-dashboard-header card engraved-panel">
@@ -141,10 +145,10 @@ import { CombatStore } from '../combat-tracker/combat.store';
 
       <div class="layout-columns dashboard-overview-columns">
         <section class="card engraved-panel roster-management" data-tour="dashboard-roster">
-          <div class="card-header">
+          <div class="card-header roster-management-toolbar">
             <div class="section-heading">
               <app-roshar-icon key="sessions" label="Roster management" tone="gold" [size]="18" />
-              <h3>Roster management</h3>
+              <h3>Roster</h3>
             </div>
             <div class="button-row">
               <a class="button-outline shell-shortcut" routerLink="/campaign/roster">
@@ -158,97 +162,164 @@ import { CombatStore } from '../combat-tracker/combat.store';
             </div>
           </div>
 
-          <div class="roster-view-toggle">
-            <button type="button" class="button-outline micro-button" [class.active]="rosterView() === 'party'" (click)="rosterView.set('party')">Party</button>
-            <button type="button" class="button-outline micro-button" [class.active]="rosterView() === 'enemy'" (click)="rosterView.set('enemy')">Enemies</button>
-          </div>
-
           @if (rosterView() === 'party') {
-            <section class="inset-panel">
-              <div class="card-header">
-                <div class="section-heading">
-                  <app-roshar-icon key="sessions" label="Campaign players" tone="sapphire" [size]="18" />
-                  <h3>Campaign players</h3>
+            <section class="roster-workspace">
+              <aside class="inset-panel roster-selector-panel">
+                <div class="card-header roster-panel-toolbar">
+                  <div class="roster-view-toggle roster-view-toggle--inline">
+                    <button type="button" class="button-outline micro-button" [class.active]="rosterView() === 'party'" (click)="rosterView.set('party')">Party</button>
+                    <button type="button" class="button-outline micro-button" [class.active]="rosterView() === 'enemy'" (click)="rosterView.set('enemy')">Enemies</button>
+                  </div>
+                  <button type="button" class="button-outline shell-shortcut" (click)="addPartyMember()">
+                    <app-roshar-icon key="aid" label="Add player" tone="sapphire" [size]="16" />
+                    <span>Add player</span>
+                  </button>
                 </div>
-                <button type="button" class="button-outline shell-shortcut" (click)="addPartyMember()">
-                  <app-roshar-icon key="aid" label="Add player" tone="sapphire" [size]="16" />
-                  <span>Add player</span>
-                </button>
-              </div>
-              <p class="muted roster-helper-copy">Players are campaign-level characters. Toggle who appears in this session, then save once for the whole roster.</p>
-              <div class="roster-editor-list">
-                @for (member of partyDraft(); track member.id) {
-                  <article class="roster-editor-row party-roster-row">
-                    <input [(ngModel)]="member.name" [ngModelOptions]="{ standalone: true }" type="text" placeholder="Name" />
-                    <input [(ngModel)]="member.role" [ngModelOptions]="{ standalone: true }" type="text" placeholder="Role" />
-                    <span class="tag-chip">HP {{ resourceSummary(member).health }}</span>
-                    <span class="tag-chip">Focus {{ resourceSummary(member).focus }}</span>
-                    <span class="tag-chip">Investiture {{ resourceSummary(member).investiture }}</span>
-                    <button type="button" class="button-outline micro-button" [class.active]="sessionPlayerIdsDraft().includes(member.id)" (click)="toggleSessionPlayer(member.id)">
-                      {{ sessionPlayerIdsDraft().includes(member.id) ? 'In session' : 'Bench' }}
-                    </button>
-                    <button type="button" class="button-outline button-danger micro-button" (click)="confirmRosterRemoval('party', member.id, member.name)">Remove</button>
-                    <app-character-stat-sheet-editor
-                      class="roster-stat-editor"
-                      [stats]="member.stats"
-                      mode="party"
-                      (statsChange)="updatePartyStats(member.id, $event)" />
-                  </article>
+                <div class="roster-selector-list">
+                  @for (member of partyDraft(); track member.id) {
+                    <article class="roster-selector-item" [class.selected]="selectedPartyMemberId() === member.id">
+                      <button type="button" class="roster-selector-button" (click)="selectPartyMember(member.id)">
+                        <div class="roster-selector-copy">
+                          <strong>{{ member.name || 'New player' }}</strong>
+                          <small>{{ member.role || 'No role set' }}</small>
+                        </div>
+                        <div class="roster-selector-resources">
+                          <span class="tag-chip">HP {{ resourceSummary(member).health }}</span>
+                          <span class="tag-chip">Focus {{ resourceSummary(member).focus }}</span>
+                          <span class="tag-chip">Investiture {{ resourceSummary(member).investiture }}</span>
+                        </div>
+                      </button>
+                      <div class="roster-selector-actions">
+                        <button type="button" class="button-outline micro-button" [class.active]="sessionPlayerIdsDraft().includes(member.id)" (click)="toggleSessionPlayer(member.id)">
+                          {{ sessionPlayerIdsDraft().includes(member.id) ? 'In session' : 'Bench' }}
+                        </button>
+                        <button type="button" class="button-outline button-danger micro-button" (click)="confirmRosterRemoval('party', member.id, member.name)">Remove</button>
+                      </div>
+                    </article>
+                  } @empty {
+                    <article class="empty-card">No players yet. Add a campaign character, then shape the full sheet on the right.</article>
+                  }
+                </div>
+              </aside>
+
+              <section class="inset-panel roster-detail-panel">
+                @if (selectedPartyMember(); as member) {
+                  <header class="roster-detail-header">
+                    <div class="roster-detail-fields">
+                      <label class="compact-field">
+                        <span>Name</span>
+                        <input type="text" [value]="member.name" placeholder="Name" (input)="updatePartyText(member.id, 'name', textValue($event))" />
+                      </label>
+                      <label class="compact-field">
+                        <span>Role</span>
+                        <input type="text" [value]="member.role || ''" placeholder="Role" (input)="updatePartyText(member.id, 'role', textValue($event))" />
+                      </label>
+                    </div>
+                    <div class="roster-detail-side">
+                      <div class="button-row">
+                        <button type="button" class="button-outline micro-button" [class.active]="sessionPlayerIdsDraft().includes(member.id)" (click)="toggleSessionPlayer(member.id)">
+                          {{ sessionPlayerIdsDraft().includes(member.id) ? 'In session' : 'Bench' }}
+                        </button>
+                        <button type="button" class="button-outline button-danger micro-button" (click)="confirmRosterRemoval('party', member.id, member.name)">
+                          Remove player
+                        </button>
+                      </div>
+                    </div>
+                  </header>
+
+                  <app-character-stat-sheet-editor [stats]="member.stats" mode="party" (statsChange)="updatePartyStats(member.id, $event)" />
+                } @else {
+                  <article class="empty-card roster-detail-empty">No player selected. Choose a campaign character or add a new one to start editing.</article>
                 }
-              </div>
+              </section>
             </section>
           } @else {
-            <section class="inset-panel">
-              <div class="card-header">
-                <div class="section-heading">
-                  <app-roshar-icon key="combat" label="Enemy templates" tone="ruby" [size]="18" />
-                  <h3>Enemy templates</h3>
+            <section class="roster-workspace">
+              <aside class="inset-panel roster-selector-panel">
+                <div class="card-header roster-panel-toolbar">
+                  <div class="roster-view-toggle roster-view-toggle--inline">
+                    <button type="button" class="button-outline micro-button" [class.active]="rosterView() === 'party'" (click)="rosterView.set('party')">Party</button>
+                    <button type="button" class="button-outline micro-button" [class.active]="rosterView() === 'enemy'" (click)="rosterView.set('enemy')">Enemies</button>
+                  </div>
+                  <button type="button" class="button-outline shell-shortcut" (click)="addEnemyTemplate()">
+                    <app-roshar-icon key="aid" label="Add enemy template" tone="ruby" [size]="16" />
+                    <span>Add enemy</span>
+                  </button>
                 </div>
-                <button type="button" class="button-outline shell-shortcut" (click)="addEnemyTemplate()">
-                  <app-roshar-icon key="aid" label="Add enemy template" tone="ruby" [size]="16" />
-                  <span>Add enemy</span>
-                </button>
-              </div>
-              <div class="roster-editor-list">
-                @for (enemy of enemyDraft(); track enemy.id) {
-                  <article class="roster-editor-row enemy-template-row">
-                    <input [(ngModel)]="enemy.name" [ngModelOptions]="{ standalone: true }" type="text" placeholder="Enemy name" />
-                    <input [(ngModel)]="enemy.role" [ngModelOptions]="{ standalone: true }" type="text" placeholder="Role" />
-                    <span class="tag-chip">HP {{ resourceSummary(enemy).health }}</span>
-                    <span class="tag-chip">Focus {{ resourceSummary(enemy).focus }}</span>
-                    <span class="tag-chip">Investiture {{ resourceSummary(enemy).investiture }}</span>
-                    <div class="enemy-sheet-cell">
-                      @if (enemy.imagePath) {
-                        <button type="button" class="enemy-sheet-thumb" [style.background-image]="'url(' + enemy.imagePath + ')'" (click)="openSheet(enemy.imagePath)"></button>
-                      } @else {
-                        <span class="tag-chip">No sheet</span>
-                      }
-                      <label class="button-outline micro-button file-trigger">
-                        <span>{{ uploadingEnemyId() === enemy.id ? 'Uploading...' : 'Upload sheet' }}</span>
-                        <input type="file" accept="image/*" (change)="uploadEnemySheet(enemy.id, $event)" />
+                <div class="roster-selector-list">
+                  @for (enemy of enemyDraft(); track enemy.id) {
+                    <article class="roster-selector-item" [class.selected]="selectedEnemyId() === enemy.id">
+                      <button type="button" class="roster-selector-button" (click)="selectEnemy(enemy.id)">
+                        <div class="roster-selector-copy">
+                          <strong>{{ enemy.name || 'New enemy template' }}</strong>
+                          <small>{{ enemy.role || 'No role set' }}</small>
+                        </div>
+                        <div class="roster-selector-resources">
+                          <span class="tag-chip">HP {{ resourceSummary(enemy).health }}</span>
+                          <span class="tag-chip">Focus {{ resourceSummary(enemy).focus }}</span>
+                          <span class="tag-chip">Investiture {{ resourceSummary(enemy).investiture }}</span>
+                        </div>
+                      </button>
+                      <div class="roster-selector-actions">
+                        <button type="button" class="button-outline button-danger micro-button" (click)="confirmRosterRemoval('enemy', enemy.id, enemy.name)">Remove</button>
+                      </div>
+                    </article>
+                  } @empty {
+                    <article class="empty-card">No enemy templates yet. Add a reusable foe and shape its combat-facing sheet on the right.</article>
+                  }
+                </div>
+              </aside>
+
+              <section class="inset-panel roster-detail-panel">
+                @if (selectedEnemy(); as enemy) {
+                  <header class="roster-detail-header roster-detail-header--enemy">
+                    <div class="roster-detail-fields">
+                      <label class="compact-field">
+                        <span>Name</span>
+                        <input type="text" [value]="enemy.name" placeholder="Enemy name" (input)="updateEnemyText(enemy.id, 'name', textValue($event))" />
                       </label>
-                      @if (enemy.imagePath) {
-                        <button type="button" class="button-outline micro-button" (click)="openSheet(enemy.imagePath)">Open</button>
-                      }
+                      <label class="compact-field">
+                        <span>Role</span>
+                        <input type="text" [value]="enemy.role || ''" placeholder="Role" (input)="updateEnemyText(enemy.id, 'role', textValue($event))" />
+                      </label>
                     </div>
-                    <button type="button" class="button-outline button-danger micro-button" (click)="confirmRosterRemoval('enemy', enemy.id, enemy.name)">Remove</button>
+                    <div class="roster-detail-side">
+                      <div class="enemy-sheet-cell">
+                        @if (enemy.imagePath) {
+                          <button type="button" class="enemy-sheet-thumb" [style.background-image]="'url(' + enemy.imagePath + ')'" (click)="openSheet(enemy.imagePath)"></button>
+                        } @else {
+                          <span class="tag-chip">No sheet</span>
+                        }
+                        <label class="button-outline micro-button file-trigger">
+                          <span>{{ uploadingEnemyId() === enemy.id ? 'Uploading...' : 'Upload sheet' }}</span>
+                          <input type="file" accept="image/*" (change)="uploadEnemySheet(enemy.id, $event)" />
+                        </label>
+                        @if (enemy.imagePath) {
+                          <button type="button" class="button-outline micro-button" (click)="openSheet(enemy.imagePath)">Open</button>
+                        }
+                        <button type="button" class="button-outline button-danger micro-button" (click)="confirmRosterRemoval('enemy', enemy.id, enemy.name)">
+                          Remove enemy
+                        </button>
+                      </div>
+                    </div>
+                  </header>
+
+                  <div class="roster-detail-stack">
+                    <app-character-stat-sheet-editor [stats]="enemy.stats" mode="enemy" (statsChange)="updateEnemyStats(enemy.id, $event)" />
                     <app-combat-preset-action-editor
-                      class="roster-preset-editor"
                       [actions]="enemy.presetActions"
                       title="Enemy preset actions"
                       emptyLabel="No preset actions yet. Add reusable enemy actions here."
+                      [compact]="true"
                       (actionsChange)="updateEnemyPresetActions(enemy.id, $event)" />
-                    <app-character-stat-sheet-editor
-                      class="roster-stat-editor"
-                      [stats]="enemy.stats"
-                      mode="enemy"
-                      (statsChange)="updateEnemyStats(enemy.id, $event)" />
-                  </article>
+                  </div>
+                } @else {
+                  <article class="empty-card roster-detail-empty">No enemy selected. Choose or add an enemy template to edit its stat block.</article>
                 }
-              </div>
-              @if (uploadError()) {
-                <p class="import-message">{{ uploadError() }}</p>
-              }
+                @if (uploadError()) {
+                  <p class="import-message">{{ uploadError() }}</p>
+                }
+              </section>
             </section>
           }
         </section>
@@ -351,7 +422,7 @@ import { CombatStore } from '../combat-tracker/combat.store';
           <strong>{{ pendingRemoval()!.label || (pendingRemoval()!.type === 'party' ? 'this player' : 'this enemy template') }}</strong>
           from the campaign roster?
         </p>
-        <p class="muted">This only changes the draft in the dashboard until you save the roster, but once saved it removes the entry from the campaign-wide roster.</p>
+        <p class="muted">This removal now saves immediately and removes the entry from the campaign-wide roster while also clearing it from this session if it was assigned here.</p>
         <div class="button-row">
           <button type="button" class="button-outline" (click)="cancelRosterRemoval()">Cancel</button>
           <button type="button" class="button-danger" (click)="confirmPendingRemoval()">Delete</button>
@@ -372,10 +443,14 @@ export class SessionDashboardPageComponent {
   readonly partyDraft = signal<PartyMember[]>([]);
   readonly enemyDraft = signal<ParticipantTemplate[]>([]);
   readonly sessionPlayerIdsDraft = signal<string[]>([]);
-  readonly rosterView = signal<'party' | 'enemy'>('party');
+  readonly rosterView = signal<RosterView>('party');
   readonly uploadingEnemyId = signal('');
   readonly uploadError = signal('');
-  readonly pendingRemoval = signal<{ type: 'party' | 'enemy'; id: string; label: string } | null>(null);
+  readonly pendingRemoval = signal<{ type: RosterView; id: string; label: string } | null>(null);
+  readonly selectedPartyMemberId = signal('');
+  readonly selectedEnemyId = signal('');
+  readonly selectedPartyMember = computed(() => this.partyDraft().find((member) => member.id === this.selectedPartyMemberId()));
+  readonly selectedEnemy = computed(() => this.enemyDraft().find((enemy) => enemy.id === this.selectedEnemyId()));
 
   constructor() {
     const sub = this.route.paramMap.subscribe((params) => {
@@ -398,6 +473,8 @@ export class SessionDashboardPageComponent {
     this.partyDraft.set(dashboard.campaignPartyMembers.map((member) => ({ ...member })));
     this.enemyDraft.set(dashboard.participantTemplates.map((enemy) => ({ ...enemy, presetActions: [...enemy.presetActions] })));
     this.sessionPlayerIdsDraft.set([...dashboard.session.playerIds]);
+    this.syncPartySelection();
+    this.syncEnemySelection();
   }
 
   addPartyMember(): void {
@@ -416,18 +493,15 @@ export class SessionDashboardPageComponent {
       },
     ]);
     this.sessionPlayerIdsDraft.update((items) => [...items, id]);
-  }
-
-  removePartyMember(id: string): void {
-    this.partyDraft.update((items) => items.filter((member) => member.id !== id));
-    this.sessionPlayerIdsDraft.update((items) => items.filter((entry) => entry !== id));
+    this.selectedPartyMemberId.set(id);
   }
 
   addEnemyTemplate(): void {
+    const enemyId = crypto.randomUUID();
     this.enemyDraft.update((items) => [
       ...items,
       {
-        id: crypto.randomUUID(),
+        id: enemyId,
         name: '',
         side: 'enemy',
         role: '',
@@ -438,6 +512,23 @@ export class SessionDashboardPageComponent {
         presetActions: [],
       },
     ]);
+    this.selectedEnemyId.set(enemyId);
+  }
+
+  selectPartyMember(memberId: string): void {
+    this.selectedPartyMemberId.set(memberId);
+  }
+
+  selectEnemy(enemyId: string): void {
+    this.selectedEnemyId.set(enemyId);
+  }
+
+  updatePartyText(memberId: string, field: 'name' | 'role', value: string): void {
+    this.partyDraft.update((items) => items.map((member) => (member.id === memberId ? { ...member, [field]: value } : member)));
+  }
+
+  updateEnemyText(enemyId: string, field: 'name' | 'role', value: string): void {
+    this.enemyDraft.update((items) => items.map((enemy) => (enemy.id === enemyId ? { ...enemy, [field]: value } : enemy)));
   }
 
   updateEnemyPresetActions(enemyId: string, presetActions: ParticipantTemplate['presetActions']): void {
@@ -454,11 +545,7 @@ export class SessionDashboardPageComponent {
     this.enemyDraft.update((items) => items.map((enemy) => (enemy.id === enemyId ? { ...enemy, stats } : enemy)));
   }
 
-  removeEnemyTemplate(id: string): void {
-    this.enemyDraft.update((items) => items.filter((enemy) => enemy.id !== id));
-  }
-
-  confirmRosterRemoval(type: 'party' | 'enemy', id: string, label: string | undefined): void {
+  confirmRosterRemoval(type: RosterView, id: string, label: string | undefined): void {
     this.pendingRemoval.set({ type, id, label: label?.trim() || '' });
   }
 
@@ -466,17 +553,21 @@ export class SessionDashboardPageComponent {
     this.pendingRemoval.set(null);
   }
 
-  confirmPendingRemoval(): void {
+  async confirmPendingRemoval(): Promise<void> {
     const pending = this.pendingRemoval();
     if (!pending) {
       return;
     }
-    if (pending.type === 'party') {
-      this.removePartyMember(pending.id);
+    if (pending.type === PARTY_VIEW) {
+      this.partyDraft.update((items) => items.filter((member) => member.id !== pending.id));
+      this.sessionPlayerIdsDraft.update((items) => items.filter((entry) => entry !== pending.id));
+      this.syncPartySelection();
     } else {
-      this.removeEnemyTemplate(pending.id);
+      this.enemyDraft.update((items) => items.filter((enemy) => enemy.id !== pending.id));
+      this.syncEnemySelection();
     }
     this.pendingRemoval.set(null);
+    await this.saveRoster();
   }
 
   async uploadEnemySheet(enemyId: string, event: Event): Promise<void> {
@@ -560,5 +651,23 @@ export class SessionDashboardPageComponent {
   resourceSummary(entry: PartyMember | ParticipantTemplate): { health: number; focus: number; investiture: number } {
     const computed = computeCharacterStatSheet(entry.stats);
     return computed.resources;
+  }
+
+  textValue(event: Event): string {
+    return (event.target as HTMLInputElement).value;
+  }
+
+  private syncPartySelection(): void {
+    if (this.partyDraft().some((member) => member.id === this.selectedPartyMemberId())) {
+      return;
+    }
+    this.selectedPartyMemberId.set(this.partyDraft()[0]?.id ?? '');
+  }
+
+  private syncEnemySelection(): void {
+    if (this.enemyDraft().some((enemy) => enemy.id === this.selectedEnemyId())) {
+      return;
+    }
+    this.selectedEnemyId.set(this.enemyDraft()[0]?.id ?? '');
   }
 }
