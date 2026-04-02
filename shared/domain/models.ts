@@ -1,3 +1,5 @@
+import type { CharacterStatSheet } from './character-stats';
+
 export type ParticipantSide = 'pc' | 'npc' | 'enemy' | 'ally';
 export type RollCategory = 'attack' | 'skill' | 'defense' | 'recovery' | 'injury' | 'generic';
 export type RollOutcome = 'success' | 'failure' | 'criticalSuccess' | 'criticalFailure' | 'graze' | 'neutral';
@@ -37,8 +39,10 @@ export interface PartyMember {
   name: string;
   side: ParticipantSide;
   role?: string;
+  stats: CharacterStatSheet;
   maxHealth?: number;
   maxFocus?: number;
+  maxInvestiture?: number;
   notes?: string;
   imagePath?: string;
 }
@@ -48,8 +52,10 @@ export interface ParticipantTemplate {
   name: string;
   side: ParticipantSide;
   role?: string;
+  stats: CharacterStatSheet;
   maxHealth?: number;
   maxFocus?: number;
+  maxInvestiture?: number;
   notes?: string;
   imagePath?: string;
   presetActions: CombatPresetAction[];
@@ -126,6 +132,8 @@ export interface CombatParticipantState {
   currentHealth?: number;
   maxFocus?: number;
   currentFocus: number;
+  maxInvestiture?: number;
+  currentInvestiture: number;
   conditions: string[];
 }
 
@@ -217,6 +225,16 @@ export interface FocusEvent {
   timestamp: string;
 }
 
+export interface InvestitureEvent {
+  id: string;
+  combatId: string;
+  participantId: string;
+  delta: number;
+  reason: string;
+  relatedActionEventId?: string;
+  timestamp: string;
+}
+
 export interface HealthEvent {
   id: string;
   combatId: string;
@@ -256,6 +274,7 @@ export interface CombatRecord {
   actionEvents: ActionEvent[];
   damageEvents: DamageEvent[];
   focusEvents: FocusEvent[];
+  investitureEvents: InvestitureEvent[];
   healthEvents: HealthEvent[];
   conditionEvents: ConditionEvent[];
 }
@@ -367,7 +386,7 @@ export interface RollAnalytics {
 export interface CombatSummary {
   combat: CombatRecord;
   rows: CombatSummaryRow[];
-  fullLog: Array<ActionEvent | DamageEvent | FocusEvent | HealthEvent | ConditionEvent>;
+  fullLog: Array<ActionEvent | DamageEvent | FocusEvent | InvestitureEvent | HealthEvent | ConditionEvent>;
 }
 
 export interface CombatSummaryRow {
@@ -439,6 +458,8 @@ export interface CreateCombatInput {
     currentHealth?: number;
     maxFocus?: number;
     currentFocus?: number;
+    maxInvestiture?: number;
+    currentInvestiture?: number;
   }>;
 }
 
@@ -485,6 +506,13 @@ export interface CreateDamageEventInput {
 }
 
 export interface CreateFocusEventInput {
+  participantId: string;
+  delta: number;
+  reason: string;
+  relatedActionEventId?: string;
+}
+
+export interface CreateInvestitureEventInput {
   participantId: string;
   delta: number;
   reason: string;

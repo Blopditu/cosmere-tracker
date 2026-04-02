@@ -8,6 +8,7 @@ import {
   CreateConditionEventInput,
   CreateFocusEventInput,
   CreateHealthEventInput,
+  CreateInvestitureEventInput,
   ReorderCurrentRoundInput,
   UpdateCombatStrikePresetInput,
 } from '@shared/domain';
@@ -104,6 +105,10 @@ export class CombatStore {
 
   async logFocus(combatId: string, input: CreateFocusEventInput): Promise<void> {
     this.syncCombatRecord(await this.api.post<CombatRecord>(`/api/combats/${combatId}/focus-events`, input));
+  }
+
+  async logInvestiture(combatId: string, input: CreateInvestitureEventInput): Promise<void> {
+    this.syncCombatRecord(await this.api.post<CombatRecord>(`/api/combats/${combatId}/investiture-events`, input));
   }
 
   async logHealth(combatId: string, input: CreateHealthEventInput): Promise<void> {

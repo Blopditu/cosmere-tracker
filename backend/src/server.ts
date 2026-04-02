@@ -60,8 +60,11 @@ import {
   SceneNode,
   SceneState,
   SessionRun,
+  SkillDefinition,
   SimulationDefinition,
   SimulationResult,
+  StatisticDefinition,
+  StatisticTableDefinition,
 } from '@shared/domain';
 
 const rootDir = path.resolve(__dirname, '..');
@@ -125,6 +128,9 @@ const campaignConsoleRepositories = {
   locations: new SqliteJsonRepository<Location>(campaignDatabase, 'locations'),
   rules: new SqliteJsonRepository<RuleReference>(campaignDatabase, 'rules'),
   resourceDefinitions: new SqliteJsonRepository<ResourceDefinition>(campaignDatabase, 'resource_definitions'),
+  statisticDefinitions: new SqliteJsonRepository<StatisticDefinition>(campaignDatabase, 'statistic_definitions'),
+  statisticTableDefinitions: new SqliteJsonRepository<StatisticTableDefinition>(campaignDatabase, 'statistic_table_definitions'),
+  skillDefinitions: new SqliteJsonRepository<SkillDefinition>(campaignDatabase, 'skill_definitions'),
   actionDefinitions: new SqliteJsonRepository<ActionDefinition>(campaignDatabase, 'action_definitions'),
   resolutionHooks: new SqliteJsonRepository<ResolutionHook>(campaignDatabase, 'resolution_hooks'),
   rewards: new SqliteJsonRepository<Reward>(campaignDatabase, 'rewards'),
@@ -144,6 +150,9 @@ const importArtifactService = new ImportArtifactService(campaignDatabase, {
   rules: campaignConsoleRepositories.rules,
   conditions: campaignConsoleRepositories.conditions,
   resourceDefinitions: campaignConsoleRepositories.resourceDefinitions,
+  statisticDefinitions: campaignConsoleRepositories.statisticDefinitions,
+  statisticTableDefinitions: campaignConsoleRepositories.statisticTableDefinitions,
+  skillDefinitions: campaignConsoleRepositories.skillDefinitions,
   actionDefinitions: campaignConsoleRepositories.actionDefinitions,
   resolutionHooks: campaignConsoleRepositories.resolutionHooks,
 });

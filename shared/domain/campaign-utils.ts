@@ -35,6 +35,9 @@ import {
   ActionDefinition,
   ResourceDefinition,
   ResolutionHook,
+  StatisticDefinition,
+  StatisticTableDefinition,
+  SkillDefinition,
   RuleAdvisory,
   SimulationResult,
   RuntimeCommandState,
@@ -321,6 +324,9 @@ export function buildCampaignConsoleData(params: {
   obstacles: Obstacle[];
   encounters: EncounterSetup[];
   resourceDefinitions: ResourceDefinition[];
+  statisticDefinitions: StatisticDefinition[];
+  statisticTableDefinitions: StatisticTableDefinition[];
+  skillDefinitions: SkillDefinition[];
   actionDefinitions: ActionDefinition[];
   resolutionHooks: ResolutionHook[];
   activeEndeavorRun?: EndeavorRun;
@@ -357,6 +363,9 @@ export function buildCampaignConsoleData(params: {
     obstacles: params.obstacles,
     encounters: params.encounters,
     resourceDefinitions: params.resourceDefinitions,
+    statisticDefinitions: params.statisticDefinitions,
+    statisticTableDefinitions: params.statisticTableDefinitions,
+    skillDefinitions: params.skillDefinitions,
     actionDefinitions: params.actionDefinitions,
     resolutionHooks: params.resolutionHooks,
     activeEndeavorRun: params.activeEndeavorRun,

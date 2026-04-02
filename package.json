@@ -8,6 +8,7 @@
     "start:backend": "tsx watch backend/src/server.ts",
     "build": "ng build",
     "build:backend": "tsc -p backend/tsconfig.json",
+    "build:chapter3-artifact": "node --import tsx tools/handbook_import/build-curated-chapter3-cli.ts",
     "watch": "ng build --watch --configuration development",
     "test": "ng test",
     "test:backend": "vitest run"

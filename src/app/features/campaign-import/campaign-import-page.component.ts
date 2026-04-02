@@ -5,6 +5,21 @@ import { ImportCandidateKind, JsonValue } from '@shared/domain';
 import { RosharIconComponent } from '../../shared/roshar-icon.component';
 import { CampaignImportStore } from './campaign-import.store';
 
+const CANDIDATE_KIND_REVIEW_ORDER: readonly ImportCandidateKind[] = [
+  'resource-definition',
+  'statistic-definition',
+  'stat-table-definition',
+  'skill-definition',
+  'rule-section',
+  'action-definition',
+  'condition-definition',
+  'combat-procedure',
+  'conversation-procedure',
+  'endeavor-procedure',
+  'duration-mechanic',
+];
+const DEFAULT_ARTIFACT_PATH = '.import-cache/chapter-3-character-statistics';
+
 @Component({
   selector: 'app-campaign-import-page',
   imports: [CommonModule, FormsModule, RosharIconComponent],
@@ -13,7 +28,7 @@ import { CampaignImportStore } from './campaign-import.store';
       <div class="route-heading">
         <p class="eyebrow">Handbook Intake</p>
         <h2>Import review desk</h2>
-        <p>Load deterministic Python artifacts, review extracted candidates, and publish modeled handbook rules without touching the live board.</p>
+        <p>Load deterministic Python or curated chapter artifacts, review extracted candidates, and publish modeled handbook rules without touching the live board.</p>
       </div>
       <div class="import-toolbar">
         <label class="compact-field">
@@ -157,6 +172,9 @@ export class CampaignImportPageComponent {
   readonly store = inject(CampaignImportStore);
   readonly candidateKinds: ImportCandidateKind[] = [
     'resource-definition',
+    'statistic-definition',
+    'stat-table-definition',
+    'skill-definition',
     'action-definition',
     'condition-definition',
     'combat-procedure',
@@ -167,6 +185,9 @@ export class CampaignImportPageComponent {
   ];
   readonly kindDescriptions: Record<ImportCandidateKind, string> = {
     'resource-definition': 'Named tracked stat or pool.',
+    'statistic-definition': 'Structured attribute, defense, or derived statistic.',
+    'stat-table-definition': 'Lookup table that maps a source stat to derived outputs.',
+    'skill-definition': 'Reusable skill metadata tied to an attribute and facet.',
     'action-definition': 'Discrete action or reaction a character can take.',
     'condition-definition': 'Named applied status or ongoing effect.',
     'combat-procedure': 'Combat flow or resolution guidance.',
@@ -176,7 +197,7 @@ export class CampaignImportPageComponent {
     'rule-section': 'Preserved reference text that is not a stronger model.',
   };
 
-  readonly artifactPath = signal('.import-cache/stormlight-handbook');
+  readonly artifactPath = signal(DEFAULT_ARTIFACT_PATH);
   readonly searchQuery = signal('');
   readonly selectedDocumentId = signal('');
   readonly selectedCandidateId = signal('');
@@ -194,12 +215,16 @@ export class CampaignImportPageComponent {
       return [];
     }
     const query = this.searchQuery().trim().toLowerCase();
-    if (!query) {
-      return document.candidates;
-    }
-    return document.candidates.filter((candidate) =>
-      `${candidate.title} ${candidate.kind} ${candidate.excerpt}`.toLowerCase().includes(query),
-    );
+    const filtered = !query
+      ? document.candidates
+      : document.candidates.filter((candidate) =>
+          `${candidate.title} ${candidate.kind} ${candidate.excerpt}`.toLowerCase().includes(query),
+        );
+    return [...filtered].sort((left, right) => {
+      const leftIndex = CANDIDATE_KIND_REVIEW_ORDER.indexOf(left.kind);
+      const rightIndex = CANDIDATE_KIND_REVIEW_ORDER.indexOf(right.kind);
+      return leftIndex - rightIndex || left.title.localeCompare(right.title);
+    });
   });
 
   constructor() {

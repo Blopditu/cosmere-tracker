@@ -57,6 +57,18 @@ import { CombatParticipantTone } from './combat-tracker.types';
               <span class="resource-meter-fill topaz-fill" [style.width.%]="focusPercent()"></span>
             </div>
           </div>
+
+          @if (showInvestiture()) {
+            <div class="battle-row-meter battle-row-meter--investiture">
+              <div class="battle-row-meter-copy">
+                <span>Investiture</span>
+                <strong>{{ investitureLabel() }}</strong>
+              </div>
+              <div class="resource-meter-track compact-track">
+                <span class="resource-meter-fill sapphire-fill" [style.width.%]="investiturePercent()"></span>
+              </div>
+            </div>
+          }
         </div>
       </button>
 
@@ -64,6 +76,10 @@ import { CombatParticipantTone } from './combat-tracker.types';
         <button type="button" class="button-outline micro-button" (click)="onAdjustHealth($event, -1)">-1 HP</button>
         <button type="button" class="button-outline micro-button" (click)="onAdjustHealth($event, 1)">+1 HP</button>
         <button type="button" class="button-outline micro-button" (click)="onAdjustFocus($event, -1)">-1 F</button>
+        @if (showInvestiture()) {
+          <button type="button" class="button-outline micro-button" (click)="onAdjustInvestiture($event, -1)">-1 I</button>
+          <button type="button" class="button-outline micro-button" (click)="onAdjustInvestiture($event, 1)">+1 I</button>
+        }
       </div>
     </article>
   `,
@@ -81,11 +97,15 @@ export class CombatParticipantRowComponent {
   readonly selectParticipant = output<void>();
   readonly adjustHealth = output<number>();
   readonly adjustFocus = output<number>();
+  readonly adjustInvestiture = output<number>();
 
   readonly healthPercent = computed(() => this.resourcePercent(this.participant().currentHealth, this.participant().maxHealth));
   readonly focusPercent = computed(() => this.resourcePercent(this.participant().currentFocus, this.participant().maxFocus));
+  readonly investiturePercent = computed(() => this.resourcePercent(this.participant().currentInvestiture, this.participant().maxInvestiture));
   readonly healthLabel = computed(() => this.resourceLabel(this.participant().currentHealth, this.participant().maxHealth));
   readonly focusLabel = computed(() => this.resourceLabel(this.participant().currentFocus, this.participant().maxFocus));
+  readonly investitureLabel = computed(() => this.resourceLabel(this.participant().currentInvestiture, this.participant().maxInvestiture));
+  readonly showInvestiture = computed(() => (this.participant().maxInvestiture ?? 0) > 0 || this.participant().currentInvestiture > 0);
 
   onAdjustHealth(event: Event, delta: number): void {
     event.stopPropagation();
@@ -95,6 +115,11 @@ export class CombatParticipantRowComponent {
   onAdjustFocus(event: Event, delta: number): void {
     event.stopPropagation();
     this.adjustFocus.emit(delta);
+  }
+
+  onAdjustInvestiture(event: Event, delta: number): void {
+    event.stopPropagation();
+    this.adjustInvestiture.emit(delta);
   }
 
   private resourcePercent(current: number | undefined, max: number | undefined): number {

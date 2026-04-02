@@ -33,12 +33,15 @@ import {
   RuleEvaluationRequest,
   RuleEvaluationResult,
   RuleReference,
+  SkillDefinition,
   SceneNode,
   SceneState,
   SceneStateMutationInput,
   SessionRun,
   SimulationDefinition,
   SimulationResult,
+  StatisticDefinition,
+  StatisticTableDefinition,
   buildCampaignConsoleData,
   evaluateStateExpression,
 } from '@shared/domain';
@@ -69,6 +72,9 @@ interface CampaignConsoleRepositories {
   locations: SqliteJsonRepository<Location>;
   rules: SqliteJsonRepository<RuleReference>;
   resourceDefinitions: SqliteJsonRepository<ResourceDefinition>;
+  statisticDefinitions: SqliteJsonRepository<StatisticDefinition>;
+  statisticTableDefinitions: SqliteJsonRepository<StatisticTableDefinition>;
+  skillDefinitions: SqliteJsonRepository<SkillDefinition>;
   actionDefinitions: SqliteJsonRepository<ActionDefinition>;
   resolutionHooks: SqliteJsonRepository<import('@shared/domain').ResolutionHook>;
   rewards: SqliteJsonRepository<Reward>;
@@ -93,6 +99,9 @@ interface CampaignContext {
   locations: Location[];
   rules: RuleReference[];
   resourceDefinitions: ResourceDefinition[];
+  statisticDefinitions: StatisticDefinition[];
+  statisticTableDefinitions: StatisticTableDefinition[];
+  skillDefinitions: SkillDefinition[];
   actionDefinitions: ActionDefinition[];
   resolutionHooks: import('@shared/domain').ResolutionHook[];
   hooks: Hook[];
@@ -180,6 +189,9 @@ export class CampaignConsoleService {
       obstacles: context.obstacles,
       encounters: context.encounters,
       resourceDefinitions: context.resourceDefinitions,
+      statisticDefinitions: context.statisticDefinitions,
+      statisticTableDefinitions: context.statisticTableDefinitions,
+      skillDefinitions: context.skillDefinitions,
       actionDefinitions: context.actionDefinitions,
       resolutionHooks: context.resolutionHooks,
       activeEndeavorRun,
@@ -663,6 +675,9 @@ export class CampaignConsoleService {
     this.repositories.locations.saveAll(seed.locations);
     this.repositories.rules.saveAll(seed.rules);
     this.repositories.resourceDefinitions.saveAll(seed.resourceDefinitions);
+    this.repositories.statisticDefinitions.saveAll([]);
+    this.repositories.statisticTableDefinitions.saveAll([]);
+    this.repositories.skillDefinitions.saveAll([]);
     this.repositories.actionDefinitions.saveAll(seed.actionDefinitions);
     this.repositories.resolutionHooks.saveAll(seed.resolutionHooks);
     this.repositories.rewards.saveAll(seed.rewards);
@@ -714,6 +729,9 @@ export class CampaignConsoleService {
       locations: this.repositories.locations.list().filter((location) => location.campaignId === campaign.id),
       rules: this.repositories.rules.list(),
       resourceDefinitions: this.repositories.resourceDefinitions.list(),
+      statisticDefinitions: this.repositories.statisticDefinitions.list(),
+      statisticTableDefinitions: this.repositories.statisticTableDefinitions.list(),
+      skillDefinitions: this.repositories.skillDefinitions.list(),
       actionDefinitions: this.repositories.actionDefinitions.list(),
       resolutionHooks: this.repositories.resolutionHooks.list(),
       hooks: this.repositories.hooks.list().filter((hook) => hook.chapterId === chapter.id),

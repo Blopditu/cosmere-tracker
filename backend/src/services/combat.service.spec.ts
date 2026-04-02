@@ -23,6 +23,8 @@ const DEFAULT_COMBAT_INPUT: CreateCombatInput = {
       currentHealth: 18,
       maxFocus: 4,
       currentFocus: 4,
+      maxInvestiture: 3,
+      currentInvestiture: 3,
     },
     {
       participantId: 'pc-2',
@@ -32,6 +34,8 @@ const DEFAULT_COMBAT_INPUT: CreateCombatInput = {
       currentHealth: 14,
       maxFocus: 5,
       currentFocus: 5,
+      maxInvestiture: 0,
+      currentInvestiture: 0,
     },
     {
       participantId: 'enemy-1',
@@ -65,6 +69,8 @@ const DEFAULT_COMBAT_INPUT: CreateCombatInput = {
       currentHealth: 24,
       maxFocus: 4,
       currentFocus: 4,
+      maxInvestiture: 2,
+      currentInvestiture: 2,
     },
   ],
 };
@@ -240,5 +246,21 @@ describe('CombatService phase rules', () => {
 
     expect(enemyRow?.reactionsUsed).toBe(1);
     expect(summary.combat.actionEvents[0]?.actionType).toBe('Brace Wall');
+  });
+
+  it('tracks investiture adjustments on combat participants', async () => {
+    const combat = await combatService.create(SESSION_ID, DEFAULT_COMBAT_INPUT);
+    const actor = combat.participants.find((participant) => participant.participantId === 'pc-1')!;
+
+    const updatedCombat = await combatService.logInvestiture(combat.id, {
+      participantId: actor.id,
+      delta: -1,
+      reason: 'Manual surge spend',
+    });
+
+    const updatedActor = updatedCombat.participants.find((participant) => participant.id === actor.id);
+    expect(updatedActor?.currentInvestiture).toBe(2);
+    expect(updatedCombat.investitureEvents).toHaveLength(1);
+    expect(updatedCombat.investitureEvents[0]?.reason).toBe('Manual surge spend');
   });
 });

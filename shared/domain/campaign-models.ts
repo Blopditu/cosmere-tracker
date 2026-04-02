@@ -1,3 +1,11 @@
+import type {
+  CharacterAttributeKey,
+  CharacterDerivedKey,
+  StatFacet,
+  StatisticGroup,
+  StatisticValueType,
+} from './character-stats';
+
 export type ID = string;
 export type ISODateTime = string;
 export type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
@@ -18,6 +26,9 @@ export type EncounterStatus = 'planned' | 'active' | 'paused' | 'finished';
 export type ImportCandidateKind =
   | 'rule-section'
   | 'resource-definition'
+  | 'statistic-definition'
+  | 'skill-definition'
+  | 'stat-table-definition'
   | 'action-definition'
   | 'condition-definition'
   | 'duration-mechanic'
@@ -494,11 +505,46 @@ export interface Location extends BaseRecord {
 export interface RuleReference extends BaseRecord {
   key: string;
   title: string;
-  category: 'combat' | 'conversation' | 'endeavor' | 'condition' | 'resource' | 'action';
+  category: 'combat' | 'conversation' | 'endeavor' | 'condition' | 'resource' | 'action' | 'skill' | 'statistic';
   excerptBlocks: TextBlock[];
   parsedTerms: string[];
   sourceRefs: SourceRef[];
   formalizationStatus: 'candidate' | 'reviewed' | 'modeled';
+}
+
+export interface StatisticDefinition extends BaseRecord {
+  key: string;
+  label: string;
+  group: StatisticGroup;
+  facet: StatFacet;
+  valueType: StatisticValueType;
+  summary: string;
+  calculation:
+    | { kind: 'formula'; expression: string }
+    | { kind: 'lookup'; tableKey: string; sourceKey: CharacterAttributeKey }
+    | { kind: 'manual' };
+  ruleReferenceIds: ID[];
+}
+
+export interface StatisticTableDefinition extends BaseRecord {
+  key: string;
+  label: string;
+  sourceStatisticKey: CharacterAttributeKey;
+  outputKeys: CharacterDerivedKey[];
+  rows: Array<{ min: number; max?: number; outputs: Record<string, JsonValue> }>;
+  ruleReferenceIds: ID[];
+}
+
+export interface SkillDefinition extends BaseRecord {
+  key: string;
+  label: string;
+  attributeKey: CharacterAttributeKey;
+  facet: Exclude<StatFacet, 'general'>;
+  summary: string;
+  relevantTasks: string[];
+  specialRules: string[];
+  gainAdvantageExamples: string[];
+  ruleReferenceIds: ID[];
 }
 
 export interface AdversaryTemplate extends BaseRecord {
@@ -799,7 +845,15 @@ export interface PublishedArtifactRef extends BaseRecord {
   documentId: ID;
   batchId: ID;
   candidateId: ID;
-  publishedEntityKind: 'ruleReference' | 'resourceDefinition' | 'actionDefinition' | 'condition' | 'resolutionHook';
+  publishedEntityKind:
+    | 'ruleReference'
+    | 'resourceDefinition'
+    | 'statisticDefinition'
+    | 'statisticTableDefinition'
+    | 'skillDefinition'
+    | 'actionDefinition'
+    | 'condition'
+    | 'resolutionHook';
   publishedEntityId: ID;
 }
 
@@ -990,6 +1044,9 @@ export interface CampaignConsoleData {
   obstacles: Obstacle[];
   encounters: EncounterSetup[];
   resourceDefinitions: ResourceDefinition[];
+  statisticDefinitions: StatisticDefinition[];
+  statisticTableDefinitions: StatisticTableDefinition[];
+  skillDefinitions: SkillDefinition[];
   actionDefinitions: ActionDefinition[];
   resolutionHooks: ResolutionHook[];
   activeEndeavorRun?: EndeavorRun;

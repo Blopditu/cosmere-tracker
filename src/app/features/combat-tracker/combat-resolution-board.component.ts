@@ -116,6 +116,10 @@ import {
                       <span>{{ target.healthLabel }}</span>
                       <span> · </span>
                       <span class="focus-text">{{ target.focusLabel }}</span>
+                      @if (target.investitureLabel) {
+                        <span> · </span>
+                        <span class="investiture-text">{{ target.investitureLabel }}</span>
+                      }
                     </small>
                   </button>
                 } @empty {

@@ -19,8 +19,10 @@ import {
   CreateDamageEventInput,
   CreateFocusEventInput,
   CreateHealthEventInput,
+  CreateInvestitureEventInput,
   FocusEvent,
   HealthEvent,
+  InvestitureEvent,
   ReorderCurrentRoundInput,
   RevertActionResult,
   TurnType,
@@ -90,6 +92,29 @@ function isSupportAction(actionType: string, hitResult: string | undefined): boo
 
 function normalizeCombatSide(side: CombatParticipantState['side']): CombatParticipantState['side'] {
   return side === 'ally' ? 'npc' : side;
+}
+
+function normalizeCombatParticipant(participant: CombatParticipantState): CombatParticipantState {
+  return {
+    ...participant,
+    side: normalizeCombatSide(participant.side),
+    presetActions: normalizePresetActions(participant.presetActions),
+    currentFocus: participant.currentFocus ?? participant.maxFocus ?? 0,
+    maxInvestiture: participant.maxInvestiture ?? undefined,
+    currentInvestiture: participant.currentInvestiture ?? participant.maxInvestiture ?? 0,
+    conditions: participant.conditions ?? [],
+  };
+}
+
+function normalizeCombatRecord(combat: CombatRecord): CombatRecord {
+  return {
+    ...combat,
+    participants: combat.participants.map(normalizeCombatParticipant),
+    focusEvents: combat.focusEvents ?? [],
+    investitureEvents: combat.investitureEvents ?? [],
+    healthEvents: combat.healthEvents ?? [],
+    conditionEvents: combat.conditionEvents ?? [],
+  };
 }
 
 function normalizePresetAction(action: CombatPresetAction): CombatPresetAction {
@@ -379,6 +404,7 @@ export class CombatService {
 
   async listBySession(sessionId: string): Promise<CombatRecord[]> {
     return (await this.combatRepository.list())
+      .map(normalizeCombatRecord)
       .filter((combat) => combat.sessionId === sessionId)
       .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
   }
@@ -388,7 +414,7 @@ export class CombatService {
     if (!combat) {
       throw new HttpError(404, 'Combat not found.');
     }
-    return combat;
+    return normalizeCombatRecord(combat);
   }
 
   async create(sessionId: string, input: CreateCombatInput): Promise<CombatRecord> {
@@ -410,6 +436,8 @@ export class CombatService {
       currentHealth: participant.currentHealth,
       maxFocus: participant.maxFocus,
       currentFocus: participant.currentFocus ?? participant.maxFocus ?? 0,
+      maxInvestiture: participant.maxInvestiture,
+      currentInvestiture: participant.currentInvestiture ?? participant.maxInvestiture ?? 0,
       conditions: [],
     }));
 
@@ -429,6 +457,7 @@ export class CombatService {
       actionEvents: [],
       damageEvents: [],
       focusEvents: [],
+      investitureEvents: [],
       healthEvents: [],
       conditionEvents: [],
     };
@@ -991,6 +1020,33 @@ export class CombatService {
     return next;
   }
 
+  async logInvestiture(combatId: string, input: CreateInvestitureEventInput): Promise<CombatRecord> {
+    const combat = await this.get(combatId);
+    const event: InvestitureEvent = {
+      id: randomUUID(),
+      combatId,
+      participantId: input.participantId,
+      delta: input.delta,
+      reason: input.reason,
+      relatedActionEventId: input.relatedActionEventId,
+      timestamp: nowIso(),
+    };
+    const next: CombatRecord = {
+      ...combat,
+      investitureEvents: [...combat.investitureEvents, event],
+      participants: combat.participants.map((participant) =>
+        participant.id === input.participantId
+          ? {
+              ...participant,
+              currentInvestiture: Math.max(0, participant.currentInvestiture + input.delta),
+            }
+          : participant,
+      ),
+    };
+    await this.combatRepository.upsert(next);
+    return next;
+  }
+
   async logHealth(combatId: string, input: CreateHealthEventInput): Promise<CombatRecord> {
     const combat = await this.get(combatId);
     const event: HealthEvent = {
@@ -1069,7 +1125,7 @@ export class CombatService {
     return {
       combat,
       rows: summarizeCombatRows(combat, combatRolls),
-      fullLog: [...combat.actionEvents, ...combat.damageEvents, ...combat.focusEvents, ...(combat.healthEvents ?? []), ...combat.conditionEvents].sort(
+      fullLog: [...combat.actionEvents, ...combat.damageEvents, ...combat.focusEvents, ...combat.investitureEvents, ...(combat.healthEvents ?? []), ...combat.conditionEvents].sort(
         (left, right) => left.timestamp.localeCompare(right.timestamp),
       ),
     };

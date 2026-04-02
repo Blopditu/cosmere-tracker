@@ -2,15 +2,24 @@ import { CommonModule } from '@angular/common';
 import { Component, DestroyRef, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
-import { ParticipantTemplate, PartyMember, SessionAnalytics, SessionDashboard } from '@shared/domain';
+import {
+  CharacterStatSheet,
+  ParticipantTemplate,
+  PartyMember,
+  SessionAnalytics,
+  SessionDashboard,
+  computeCharacterStatSheet,
+  createEmptyCharacterStatSheet,
+} from '@shared/domain';
 import { SessionStoreService } from '../../core/session-store.service';
 import { CombatPresetActionEditorComponent } from '../../shared/combat-preset-action-editor.component';
+import { CharacterStatSheetEditorComponent } from '../../shared/character-stat-sheet-editor.component';
 import { RosharIconComponent } from '../../shared/roshar-icon.component';
 import { CombatStore } from '../combat-tracker/combat.store';
 
 @Component({
   selector: 'app-session-dashboard-page',
-  imports: [CommonModule, FormsModule, RouterLink, RosharIconComponent, CombatPresetActionEditorComponent],
+  imports: [CommonModule, FormsModule, RouterLink, RosharIconComponent, CombatPresetActionEditorComponent, CharacterStatSheetEditorComponent],
   template: `
     @if (dashboard()) {
       <section class="page-header session-dashboard-header card engraved-panel">
@@ -172,12 +181,18 @@ import { CombatStore } from '../combat-tracker/combat.store';
                   <article class="roster-editor-row party-roster-row">
                     <input [(ngModel)]="member.name" [ngModelOptions]="{ standalone: true }" type="text" placeholder="Name" />
                     <input [(ngModel)]="member.role" [ngModelOptions]="{ standalone: true }" type="text" placeholder="Role" />
-                    <input [(ngModel)]="member.maxHealth" [ngModelOptions]="{ standalone: true }" type="number" min="0" placeholder="HP" />
-                    <input [(ngModel)]="member.maxFocus" [ngModelOptions]="{ standalone: true }" type="number" min="0" placeholder="Focus" />
+                    <span class="tag-chip">HP {{ resourceSummary(member).health }}</span>
+                    <span class="tag-chip">Focus {{ resourceSummary(member).focus }}</span>
+                    <span class="tag-chip">Investiture {{ resourceSummary(member).investiture }}</span>
                     <button type="button" class="button-outline micro-button" [class.active]="sessionPlayerIdsDraft().includes(member.id)" (click)="toggleSessionPlayer(member.id)">
                       {{ sessionPlayerIdsDraft().includes(member.id) ? 'In session' : 'Bench' }}
                     </button>
                     <button type="button" class="button-outline button-danger micro-button" (click)="confirmRosterRemoval('party', member.id, member.name)">Remove</button>
+                    <app-character-stat-sheet-editor
+                      class="roster-stat-editor"
+                      [stats]="member.stats"
+                      mode="party"
+                      (statsChange)="updatePartyStats(member.id, $event)" />
                   </article>
                 }
               </div>
@@ -199,8 +214,9 @@ import { CombatStore } from '../combat-tracker/combat.store';
                   <article class="roster-editor-row enemy-template-row">
                     <input [(ngModel)]="enemy.name" [ngModelOptions]="{ standalone: true }" type="text" placeholder="Enemy name" />
                     <input [(ngModel)]="enemy.role" [ngModelOptions]="{ standalone: true }" type="text" placeholder="Role" />
-                    <input [(ngModel)]="enemy.maxHealth" [ngModelOptions]="{ standalone: true }" type="number" min="0" placeholder="HP" />
-                    <input [(ngModel)]="enemy.maxFocus" [ngModelOptions]="{ standalone: true }" type="number" min="0" placeholder="Focus" />
+                    <span class="tag-chip">HP {{ resourceSummary(enemy).health }}</span>
+                    <span class="tag-chip">Focus {{ resourceSummary(enemy).focus }}</span>
+                    <span class="tag-chip">Investiture {{ resourceSummary(enemy).investiture }}</span>
                     <div class="enemy-sheet-cell">
                       @if (enemy.imagePath) {
                         <button type="button" class="enemy-sheet-thumb" [style.background-image]="'url(' + enemy.imagePath + ')'" (click)="openSheet(enemy.imagePath)"></button>
@@ -222,6 +238,11 @@ import { CombatStore } from '../combat-tracker/combat.store';
                       title="Enemy preset actions"
                       emptyLabel="No preset actions yet. Add reusable enemy actions here."
                       (actionsChange)="updateEnemyPresetActions(enemy.id, $event)" />
+                    <app-character-stat-sheet-editor
+                      class="roster-stat-editor"
+                      [stats]="enemy.stats"
+                      mode="enemy"
+                      (statsChange)="updateEnemyStats(enemy.id, $event)" />
                   </article>
                 }
               </div>
@@ -388,8 +409,10 @@ export class SessionDashboardPageComponent {
         name: '',
         side: 'pc',
         role: '',
+        stats: createEmptyCharacterStatSheet(),
         maxHealth: undefined,
         maxFocus: undefined,
+        maxInvestiture: undefined,
       },
     ]);
     this.sessionPlayerIdsDraft.update((items) => [...items, id]);
@@ -408,8 +431,10 @@ export class SessionDashboardPageComponent {
         name: '',
         side: 'enemy',
         role: '',
+        stats: createEmptyCharacterStatSheet(),
         maxHealth: undefined,
         maxFocus: undefined,
+        maxInvestiture: undefined,
         presetActions: [],
       },
     ]);
@@ -419,6 +444,14 @@ export class SessionDashboardPageComponent {
     this.enemyDraft.update((items) =>
       items.map((enemy) => (enemy.id === enemyId ? { ...enemy, presetActions: [...presetActions] } : enemy)),
     );
+  }
+
+  updatePartyStats(memberId: string, stats: CharacterStatSheet): void {
+    this.partyDraft.update((items) => items.map((member) => (member.id === memberId ? { ...member, stats } : member)));
+  }
+
+  updateEnemyStats(enemyId: string, stats: CharacterStatSheet): void {
+    this.enemyDraft.update((items) => items.map((enemy) => (enemy.id === enemyId ? { ...enemy, stats } : enemy)));
   }
 
   removeEnemyTemplate(id: string): void {
@@ -515,10 +548,17 @@ export class SessionDashboardPageComponent {
       name,
       side,
       role: role || undefined,
+      stats: entry.stats,
       maxHealth: entry.maxHealth ?? undefined,
       maxFocus: entry.maxFocus ?? undefined,
+      maxInvestiture: entry.maxInvestiture ?? undefined,
       imagePath: entry.imagePath || undefined,
       presetActions: 'presetActions' in entry ? [...entry.presetActions] : [],
     };
+  }
+
+  resourceSummary(entry: PartyMember | ParticipantTemplate): { health: number; focus: number; investiture: number } {
+    const computed = computeCharacterStatSheet(entry.stats);
+    return computed.resources;
   }
 }

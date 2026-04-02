@@ -75,6 +75,7 @@ export type ResolutionTargetChip = {
   tone: CombatParticipantTone;
   healthLabel: string;
   focusLabel: string;
+  investitureLabel?: string;
   active: boolean;
 };
 

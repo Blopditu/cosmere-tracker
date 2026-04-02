@@ -7,6 +7,7 @@ import {
   ActionCatalogItem,
   ActionKind,
   CombatPhase,
+  CombatParticipantState,
   CombatPresetAction,
   CombatRecord,
   CombatRound,
@@ -46,6 +47,7 @@ const PRESET_CHOICE_PREFIX = 'preset:';
 const QUICK_DAMAGE_REASON = 'Quick battle-board damage';
 const QUICK_HEALING_REASON = 'Quick battle-board healing';
 const MANUAL_FOCUS_REASON = 'Manual focus adjustment';
+const MANUAL_INVESTITURE_REASON = 'Manual investiture adjustment';
 const PLAYER_SIDE = 'pc';
 const CUSTOM_ACTION_KEYS = new Set([DEFAULT_CUSTOM_ACTION_KEY, DEFAULT_REACTION_ACTION_KEY]);
 const WAITING_FOR_FAST_NPC_LABEL = 'Will act in Fast NPC';
@@ -415,10 +417,11 @@ function isSupportTargetAction(action: ResolutionActionChoice | null): boolean {
                         [reactionTone]="reactionTone(participant.id)"
                         [turnStatus]="participantTurnStatus(participant.id)"
                         [isActor]="selectedParticipant()?.id === participant.id"
-                        [isTarget]="selectedTarget()?.id === participant.id"
-                        (selectParticipant)="selectParticipant(participant.id)"
-                        (adjustHealth)="adjustHealthFromRow(participant.id, $event)"
-                        (adjustFocus)="adjustFocus(participant.id, $event)" />
+                      [isTarget]="selectedTarget()?.id === participant.id"
+                      (selectParticipant)="selectParticipant(participant.id)"
+                      (adjustHealth)="adjustHealthFromRow(participant.id, $event)"
+                      (adjustFocus)="adjustFocus(participant.id, $event)"
+                      (adjustInvestiture)="adjustInvestiture(participant.id, $event)" />
                     }
                   </div>
                 </section>
@@ -810,6 +813,17 @@ export class CombatTrackerPageComponent {
       note: 'Focus change',
     }));
 
+    const investitureEntries = combat.investitureEvents.map((event) => ({
+      id: event.id,
+      timestamp: event.timestamp,
+      category: 'resource' as const,
+      icon: { key: 'focus', label: 'Investiture adjustment', tone: event.delta < 0 ? 'sapphire' : 'emerald' },
+      result: undefined,
+      title: `${this.participantName(event.participantId)} ${event.delta < 0 ? 'spent' : 'gained'} ${Math.abs(event.delta)} investiture`,
+      detail: event.reason,
+      note: 'Investiture change',
+    }));
+
     const conditionEntries = combat.conditionEvents.map((event) => ({
       id: event.id,
       timestamp: event.timestamp,
@@ -821,7 +835,7 @@ export class CombatTrackerPageComponent {
       note: 'Condition change',
     }));
 
-    return [...actionEntries, ...healthEntries, ...focusEntries, ...conditionEntries]
+    return [...actionEntries, ...healthEntries, ...focusEntries, ...investitureEntries, ...conditionEntries]
       .sort((left, right) => new Date(right.timestamp).getTime() - new Date(left.timestamp).getTime())
       .slice(0, 40);
   });
@@ -874,6 +888,10 @@ export class CombatTrackerPageComponent {
         tone: this.participantTone(candidate.side),
         healthLabel: this.resourceText(candidate.currentHealth, candidate.maxHealth),
         focusLabel: this.resourceText(candidate.currentFocus, candidate.maxFocus),
+        investitureLabel:
+          (candidate.maxInvestiture ?? 0) > 0 || candidate.currentInvestiture > 0
+            ? this.resourceText(candidate.currentInvestiture, candidate.maxInvestiture)
+            : undefined,
         active: this.targetId() === candidate.id,
       }));
   });
@@ -886,12 +904,12 @@ export class CombatTrackerPageComponent {
     return {
       actorStatus: this.selectedTurnStateMessage(),
       targetStatus: target
-        ? `${this.resourceText(target.currentHealth, target.maxHealth)} HP · ${this.resourceText(target.currentFocus, target.maxFocus)} focus`
+        ? this.targetStatusLabel(target)
         : this.currentActionRequiresTarget()
           ? 'Pick the next target from the strip below.'
           : this.currentActionShowsTargetStrip()
             ? 'Optional target. Pick someone if this action affects a combatant.'
-          : 'No target needed for this action.',
+            : 'No target needed for this action.',
       reactionStatus: reactionAvailable ? 'Reaction available' : turn?.status === 'complete' ? 'Reaction window still open' : 'Reaction spent',
     };
   });
@@ -1432,6 +1450,10 @@ export class CombatTrackerPageComponent {
     await this.store.logFocus(this.combatId(), { participantId, delta, reason: MANUAL_FOCUS_REASON });
   }
 
+  async adjustInvestiture(participantId: string, delta: number): Promise<void> {
+    await this.store.logInvestiture(this.combatId(), { participantId, delta, reason: MANUAL_INVESTITURE_REASON });
+  }
+
   async removeCondition(participantId: string, conditionName: string): Promise<void> {
     await this.store.logCondition(this.combatId(), { participantId, conditionName, operation: 'remove' });
   }
@@ -1677,6 +1699,17 @@ export class CombatTrackerPageComponent {
     if (this.targetId() === participant.id) {
       this.clearTarget();
     }
+  }
+
+  private targetStatusLabel(target: CombatParticipantState): string {
+    const parts = [
+      `${this.resourceText(target.currentHealth, target.maxHealth)} HP`,
+      `${this.resourceText(target.currentFocus, target.maxFocus)} focus`,
+    ];
+    if ((target.maxInvestiture ?? 0) > 0 || target.currentInvestiture > 0) {
+      parts.push(`${this.resourceText(target.currentInvestiture, target.maxInvestiture)} investiture`);
+    }
+    return parts.join(' · ');
   }
 
   private applyActionDefaults(action: ResolutionActionChoice): void {

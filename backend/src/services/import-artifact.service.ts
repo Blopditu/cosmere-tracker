@@ -21,6 +21,9 @@ import {
   ReviewDecision,
   ReviewDecisionInput,
   RuleReference,
+  SkillDefinition,
+  StatisticDefinition,
+  StatisticTableDefinition,
   SourceBlock,
   SourceDocument,
   SourcePage,
@@ -33,6 +36,9 @@ interface ImportArtifactRepositories {
   rules: SqliteJsonRepository<RuleReference>;
   conditions: SqliteJsonRepository<Condition>;
   resourceDefinitions: SqliteJsonRepository<ResourceDefinition>;
+  statisticDefinitions: SqliteJsonRepository<StatisticDefinition>;
+  statisticTableDefinitions: SqliteJsonRepository<StatisticTableDefinition>;
+  skillDefinitions: SqliteJsonRepository<SkillDefinition>;
   actionDefinitions: SqliteJsonRepository<ActionDefinition>;
   resolutionHooks: SqliteJsonRepository<ResolutionHook>;
 }
@@ -77,6 +83,16 @@ function normalizeEffects(value: unknown): ActionDefinition['effects'] {
 function normalizeMessages(value: unknown): ResolutionHook['messages'] {
   return Array.isArray(value)
     ? (value.filter((entry) => typeof entry === 'object' && entry !== null) as ResolutionHook['messages'])
+    : [];
+}
+
+function normalizeStringArray(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === 'string') : [];
+}
+
+function normalizeStatisticTableRows(value: unknown): StatisticTableDefinition['rows'] {
+  return Array.isArray(value)
+    ? (value.filter((entry) => typeof entry === 'object' && entry !== null) as StatisticTableDefinition['rows'])
     : [];
 }
 
@@ -567,6 +583,95 @@ export class ImportArtifactService {
           });
         }
 
+        if (candidate.kind === 'statistic-definition') {
+          const existing = this.repositories.statisticDefinitions.get(`stat-${candidate.key}`);
+          this.repositories.statisticDefinitions.upsert({
+            id: `stat-${candidate.key}`,
+            createdAt: existing?.createdAt ?? now,
+            updatedAt: now,
+            revision: (existing?.revision ?? 0) + 1,
+            key: candidate.key,
+            label: asString(candidate.payload['label'], candidate.title),
+            group: (candidate.payload['group'] as StatisticDefinition['group']) ?? 'derived',
+            facet: (candidate.payload['facet'] as StatisticDefinition['facet']) ?? 'general',
+            valueType: (candidate.payload['valueType'] as StatisticDefinition['valueType']) ?? 'number',
+            summary: asString(candidate.payload['summary'], candidate.excerpt),
+            calculation:
+              typeof candidate.payload['calculation'] === 'object' && candidate.payload['calculation'] !== null
+                ? (candidate.payload['calculation'] as StatisticDefinition['calculation'])
+                : { kind: 'manual' },
+            ruleReferenceIds: [ruleReference.id],
+          });
+          this.upsertPublishedRef({
+            id: `pub-${candidate.id}-stat`,
+            createdAt: now,
+            updatedAt: now,
+            revision: 1,
+            documentId: document.id,
+            batchId: batch.id,
+            candidateId: candidate.id,
+            publishedEntityKind: 'statisticDefinition',
+            publishedEntityId: `stat-${candidate.key}`,
+          });
+        }
+
+        if (candidate.kind === 'stat-table-definition') {
+          const existing = this.repositories.statisticTableDefinitions.get(`stat-table-${candidate.key}`);
+          this.repositories.statisticTableDefinitions.upsert({
+            id: `stat-table-${candidate.key}`,
+            createdAt: existing?.createdAt ?? now,
+            updatedAt: now,
+            revision: (existing?.revision ?? 0) + 1,
+            key: candidate.key,
+            label: asString(candidate.payload['label'], candidate.title),
+            sourceStatisticKey: asString(candidate.payload['sourceStatisticKey'], candidate.key) as StatisticTableDefinition['sourceStatisticKey'],
+            outputKeys: normalizeStringArray(candidate.payload['outputKeys']) as StatisticTableDefinition['outputKeys'],
+            rows: normalizeStatisticTableRows(candidate.payload['rows']),
+            ruleReferenceIds: [ruleReference.id],
+          });
+          this.upsertPublishedRef({
+            id: `pub-${candidate.id}-stat-table`,
+            createdAt: now,
+            updatedAt: now,
+            revision: 1,
+            documentId: document.id,
+            batchId: batch.id,
+            candidateId: candidate.id,
+            publishedEntityKind: 'statisticTableDefinition',
+            publishedEntityId: `stat-table-${candidate.key}`,
+          });
+        }
+
+        if (candidate.kind === 'skill-definition') {
+          const existing = this.repositories.skillDefinitions.get(`skill-${candidate.key}`);
+          this.repositories.skillDefinitions.upsert({
+            id: `skill-${candidate.key}`,
+            createdAt: existing?.createdAt ?? now,
+            updatedAt: now,
+            revision: (existing?.revision ?? 0) + 1,
+            key: candidate.key,
+            label: asString(candidate.payload['label'], candidate.title),
+            attributeKey: asString(candidate.payload['attributeKey'], candidate.key) as SkillDefinition['attributeKey'],
+            facet: (candidate.payload['facet'] as SkillDefinition['facet']) ?? 'physical',
+            summary: asString(candidate.payload['summary'], candidate.excerpt),
+            relevantTasks: normalizeStringArray(candidate.payload['relevantTasks']),
+            specialRules: normalizeStringArray(candidate.payload['specialRules']),
+            gainAdvantageExamples: normalizeStringArray(candidate.payload['gainAdvantageExamples']),
+            ruleReferenceIds: [ruleReference.id],
+          });
+          this.upsertPublishedRef({
+            id: `pub-${candidate.id}-skill`,
+            createdAt: now,
+            updatedAt: now,
+            revision: 1,
+            documentId: document.id,
+            batchId: batch.id,
+            candidateId: candidate.id,
+            publishedEntityKind: 'skillDefinition',
+            publishedEntityId: `skill-${candidate.key}`,
+          });
+        }
+
         if (candidate.kind === 'action-definition') {
           const existing = this.repositories.actionDefinitions.get(`action-${candidate.key}`);
           this.repositories.actionDefinitions.upsert({
@@ -826,6 +931,11 @@ export class ImportArtifactService {
     switch (candidateKind) {
       case 'resource-definition':
         return 'resource';
+      case 'skill-definition':
+        return 'skill';
+      case 'statistic-definition':
+      case 'stat-table-definition':
+        return 'statistic';
       case 'action-definition':
         return 'action';
       case 'condition-definition':

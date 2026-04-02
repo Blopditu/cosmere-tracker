@@ -2,7 +2,7 @@ import { CommonModule, DatePipe } from '@angular/common';
 import { Component, inject, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { Router } from '@angular/router';
-import { FullAppBackup, ParticipantTemplate, PartyMember, SessionBackup } from '@shared/domain';
+import { FullAppBackup, ParticipantTemplate, PartyMember, SessionBackup, createEmptyCharacterStatSheet } from '@shared/domain';
 import { SessionStoreService } from '../../core/session-store.service';
 import { RosharIconComponent } from '../../shared/roshar-icon.component';
 
@@ -17,8 +17,10 @@ function parseRosterLines(value: string, side: 'pc' | 'enemy'): Array<Omit<Party
         name,
         side,
         role: role || undefined,
+        stats: createEmptyCharacterStatSheet(),
         maxHealth: maxHealth ? Number(maxHealth) : undefined,
         maxFocus: maxFocus ? Number(maxFocus) : undefined,
+        maxInvestiture: undefined,
       };
     });
 }

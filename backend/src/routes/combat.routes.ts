@@ -20,6 +20,7 @@ export function createCombatRouter(controller: CombatController): Router {
   router.delete('/combats/:combatId/actions/:actionEventId', asyncHandler(controller.revertAction));
   router.post('/combats/:combatId/damage-events', asyncHandler(controller.logDamage));
   router.post('/combats/:combatId/focus-events', asyncHandler(controller.logFocus));
+  router.post('/combats/:combatId/investiture-events', asyncHandler(controller.logInvestiture));
   router.post('/combats/:combatId/health-events', asyncHandler(controller.logHealth));
   router.post('/combats/:combatId/condition-events', asyncHandler(controller.logCondition));
   router.get('/combats/:combatId/summary', asyncHandler(controller.summary));

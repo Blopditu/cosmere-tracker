@@ -20,6 +20,8 @@ import {
   SessionSummary,
   StageScene,
   UpdateSessionInput,
+  computeCharacterStatSheet,
+  normalizeCharacterStatSheet,
 } from '@shared/domain';
 import { HttpError } from '../lib/http';
 import { nowIso } from '../lib/time';
@@ -98,28 +100,44 @@ function summarizeCombatRowsByName(combat: CombatRecord, combatRolls: RollEvent[
 }
 
 function normalizePartyMember(member: PartyMember): PartyMember {
+  const stats = normalizeCharacterStatSheet(member.stats, {
+    health: member.maxHealth,
+    focus: member.maxFocus,
+    investiture: member.maxInvestiture,
+  });
+  const computed = computeCharacterStatSheet(stats);
   return {
     ...member,
     name: member.name.trim(),
     side: member.side === 'ally' ? 'ally' : 'pc',
+    stats,
     role: member.role?.trim() || undefined,
     notes: member.notes?.trim() || undefined,
     imagePath: member.imagePath || undefined,
-    maxHealth: member.maxHealth ?? undefined,
-    maxFocus: member.maxFocus ?? undefined,
+    maxHealth: computed.resources.health,
+    maxFocus: computed.resources.focus,
+    maxInvestiture: computed.resources.investiture,
   };
 }
 
 function normalizeParticipantTemplate(template: ParticipantTemplate): ParticipantTemplate {
+  const stats = normalizeCharacterStatSheet(template.stats, {
+    health: template.maxHealth,
+    focus: template.maxFocus,
+    investiture: template.maxInvestiture,
+  });
+  const computed = computeCharacterStatSheet(stats);
   return {
     ...template,
     name: template.name.trim(),
     side: template.side === 'npc' ? 'npc' : 'enemy',
+    stats,
     role: template.role?.trim() || undefined,
     notes: template.notes?.trim() || undefined,
     imagePath: template.imagePath || undefined,
-    maxHealth: template.maxHealth ?? undefined,
-    maxFocus: template.maxFocus ?? undefined,
+    maxHealth: computed.resources.health,
+    maxFocus: computed.resources.focus,
+    maxInvestiture: computed.resources.investiture,
     presetActions: normalizePresetActions(template.presetActions),
   };
 }
@@ -153,17 +171,24 @@ function normalizePresetAction(action: CombatPresetAction | undefined): CombatPr
 }
 
 function participantSignature(
-  entry: Pick<PartyMember | ParticipantTemplate, 'name' | 'side' | 'role' | 'maxHealth' | 'maxFocus' | 'notes' | 'imagePath'> &
+  entry: Pick<PartyMember | ParticipantTemplate, 'name' | 'side' | 'role' | 'maxHealth' | 'maxFocus' | 'maxInvestiture' | 'notes' | 'imagePath' | 'stats'> &
     Partial<Pick<ParticipantTemplate, 'presetActions'>>,
 ): string {
+  const stats = normalizeCharacterStatSheet(entry.stats, {
+    health: entry.maxHealth,
+    focus: entry.maxFocus,
+    investiture: entry.maxInvestiture,
+  });
   return JSON.stringify({
     name: entry.name.trim().toLowerCase(),
     side: entry.side,
     role: entry.role?.trim().toLowerCase() || '',
     maxHealth: entry.maxHealth ?? null,
     maxFocus: entry.maxFocus ?? null,
+    maxInvestiture: entry.maxInvestiture ?? null,
     notes: entry.notes?.trim().toLowerCase() || '',
     imagePath: entry.imagePath || '',
+    stats,
     presetActions: normalizePresetActions(entry.presetActions).map((action) => ({
       name: action.name.trim().toLowerCase(),
       kind: action.kind,

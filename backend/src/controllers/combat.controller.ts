@@ -84,6 +84,10 @@ export class CombatController {
     response.status(201).json(await this.combatService.logFocus(String(request.params['combatId']), request.body));
   };
 
+  logInvestiture = async (request: Request, response: Response) => {
+    response.status(201).json(await this.combatService.logInvestiture(String(request.params['combatId']), request.body));
+  };
+
   logHealth = async (request: Request, response: Response) => {
     response.status(201).json(await this.combatService.logHealth(String(request.params['combatId']), request.body));
   };

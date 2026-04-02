@@ -1,14 +1,15 @@
 import { CommonModule } from '@angular/common';
 import { Component, signal, inject } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { ParticipantTemplate, PartyMember } from '@shared/domain';
+import { CharacterStatSheet, ParticipantTemplate, PartyMember, computeCharacterStatSheet, createEmptyCharacterStatSheet } from '@shared/domain';
 import { SessionStoreService } from '../../core/session-store.service';
 import { CombatPresetActionEditorComponent } from '../../shared/combat-preset-action-editor.component';
+import { CharacterStatSheetEditorComponent } from '../../shared/character-stat-sheet-editor.component';
 import { RosharIconComponent } from '../../shared/roshar-icon.component';
 
 @Component({
   selector: 'app-campaign-roster-page',
-  imports: [CommonModule, FormsModule, RosharIconComponent, CombatPresetActionEditorComponent],
+  imports: [CommonModule, FormsModule, RosharIconComponent, CombatPresetActionEditorComponent, CharacterStatSheetEditorComponent],
   template: `
     <section class="page-header campaign-roster-header card engraved-panel">
       <div class="route-heading">
@@ -58,9 +59,15 @@ import { RosharIconComponent } from '../../shared/roshar-icon.component';
               <article class="roster-editor-row">
                 <input [(ngModel)]="member.name" [ngModelOptions]="{ standalone: true }" type="text" placeholder="Name" />
                 <input [(ngModel)]="member.role" [ngModelOptions]="{ standalone: true }" type="text" placeholder="Role" />
-                <input [(ngModel)]="member.maxHealth" [ngModelOptions]="{ standalone: true }" type="number" min="0" placeholder="HP" />
-                <input [(ngModel)]="member.maxFocus" [ngModelOptions]="{ standalone: true }" type="number" min="0" placeholder="Focus" />
+                <span class="tag-chip">HP {{ resourceSummary(member).health }}</span>
+                <span class="tag-chip">Focus {{ resourceSummary(member).focus }}</span>
+                <span class="tag-chip">Investiture {{ resourceSummary(member).investiture }}</span>
                 <button type="button" class="button-outline button-danger micro-button" (click)="confirmRosterRemoval('party', member.id, member.name)">Remove</button>
+                <app-character-stat-sheet-editor
+                  class="roster-stat-editor"
+                  [stats]="member.stats"
+                  mode="party"
+                  (statsChange)="updatePartyStats(member.id, $event)" />
               </article>
             } @empty {
               <article class="empty-card">No campaign players yet. Add the recurring party here once, then assign them into sessions as needed.</article>
@@ -85,8 +92,9 @@ import { RosharIconComponent } from '../../shared/roshar-icon.component';
               <article class="roster-editor-row enemy-template-row">
                 <input [(ngModel)]="enemy.name" [ngModelOptions]="{ standalone: true }" type="text" placeholder="Enemy name" />
                 <input [(ngModel)]="enemy.role" [ngModelOptions]="{ standalone: true }" type="text" placeholder="Role" />
-                <input [(ngModel)]="enemy.maxHealth" [ngModelOptions]="{ standalone: true }" type="number" min="0" placeholder="HP" />
-                <input [(ngModel)]="enemy.maxFocus" [ngModelOptions]="{ standalone: true }" type="number" min="0" placeholder="Focus" />
+                <span class="tag-chip">HP {{ resourceSummary(enemy).health }}</span>
+                <span class="tag-chip">Focus {{ resourceSummary(enemy).focus }}</span>
+                <span class="tag-chip">Investiture {{ resourceSummary(enemy).investiture }}</span>
                 <div class="enemy-sheet-cell">
                   @if (enemy.imagePath) {
                     <button type="button" class="enemy-sheet-thumb" [style.background-image]="'url(' + enemy.imagePath + ')'" (click)="openSheet(enemy.imagePath)"></button>
@@ -108,6 +116,11 @@ import { RosharIconComponent } from '../../shared/roshar-icon.component';
                   title="Enemy preset actions"
                   emptyLabel="No preset actions yet. Add reusable enemy actions here."
                   (actionsChange)="updateEnemyPresetActions(enemy.id, $event)" />
+                <app-character-stat-sheet-editor
+                  class="roster-stat-editor"
+                  [stats]="enemy.stats"
+                  mode="enemy"
+                  (statsChange)="updateEnemyStats(enemy.id, $event)" />
               </article>
             } @empty {
               <article class="empty-card">No enemy templates yet. Add reusable foes here so combat setup can clone them into new encounters.</article>
@@ -170,8 +183,10 @@ export class CampaignRosterPageComponent {
         name: '',
         side: 'pc',
         role: '',
+        stats: createEmptyCharacterStatSheet(),
         maxHealth: undefined,
         maxFocus: undefined,
+        maxInvestiture: undefined,
       },
     ]);
   }
@@ -184,8 +199,10 @@ export class CampaignRosterPageComponent {
         name: '',
         side: 'enemy',
         role: '',
+        stats: createEmptyCharacterStatSheet(),
         maxHealth: undefined,
         maxFocus: undefined,
+        maxInvestiture: undefined,
         presetActions: [],
       },
     ]);
@@ -195,6 +212,14 @@ export class CampaignRosterPageComponent {
     this.enemyDraft.update((items) =>
       items.map((enemy) => (enemy.id === enemyId ? { ...enemy, presetActions: [...presetActions] } : enemy)),
     );
+  }
+
+  updatePartyStats(memberId: string, stats: CharacterStatSheet): void {
+    this.partyDraft.update((items) => items.map((member) => (member.id === memberId ? { ...member, stats } : member)));
+  }
+
+  updateEnemyStats(enemyId: string, stats: CharacterStatSheet): void {
+    this.enemyDraft.update((items) => items.map((enemy) => (enemy.id === enemyId ? { ...enemy, stats } : enemy)));
   }
 
   confirmRosterRemoval(type: 'party' | 'enemy', id: string, label: string | undefined): void {
@@ -269,8 +294,10 @@ export class CampaignRosterPageComponent {
       name,
       side: member.side === 'ally' ? 'ally' : 'pc',
       role: role || undefined,
+      stats: member.stats,
       maxHealth: member.maxHealth ?? undefined,
       maxFocus: member.maxFocus ?? undefined,
+      maxInvestiture: member.maxInvestiture ?? undefined,
       imagePath: member.imagePath || undefined,
     };
   }
@@ -286,10 +313,17 @@ export class CampaignRosterPageComponent {
       name,
       side: template.side === 'npc' ? 'npc' : 'enemy',
       role: role || undefined,
+      stats: template.stats,
       maxHealth: template.maxHealth ?? undefined,
       maxFocus: template.maxFocus ?? undefined,
+      maxInvestiture: template.maxInvestiture ?? undefined,
       imagePath: template.imagePath || undefined,
       presetActions: template.presetActions,
     };
+  }
+
+  resourceSummary(entry: PartyMember | ParticipantTemplate): { health: number; focus: number; investiture: number } {
+    const computed = computeCharacterStatSheet(entry.stats);
+    return computed.resources;
   }
 }

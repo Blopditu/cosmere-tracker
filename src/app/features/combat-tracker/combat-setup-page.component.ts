@@ -2,7 +2,7 @@ import { CommonModule } from '@angular/common';
 import { ChangeDetectionStrategy, Component, DestroyRef, computed, inject, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
-import { CombatPresetAction, CreateCombatInput, ParticipantSide } from '@shared/domain';
+import { CombatPresetAction, CreateCombatInput, ParticipantSide, computeCharacterStatSheet } from '@shared/domain';
 import { SessionStoreService } from '../../core/session-store.service';
 import { CombatPresetActionEditorComponent } from '../../shared/combat-preset-action-editor.component';
 import { RosharIconComponent } from '../../shared/roshar-icon.component';
@@ -19,9 +19,31 @@ interface EditableCombatParticipant {
   currentFocus?: number;
   maxHealth?: number;
   maxFocus?: number;
+  currentInvestiture?: number;
+  maxInvestiture?: number;
   presetActions: CombatPresetAction[];
   sourceTemplateId?: string;
   templateOrdinal?: number;
+}
+
+function computeCharacterResources(entry: {
+  stats: Parameters<typeof computeCharacterStatSheet>[0];
+  maxHealth?: number;
+  maxFocus?: number;
+  maxInvestiture?: number;
+}): Pick<
+  EditableCombatParticipant,
+  'currentHealth' | 'currentFocus' | 'currentInvestiture' | 'maxHealth' | 'maxFocus' | 'maxInvestiture'
+> {
+  const computed = computeCharacterStatSheet(entry.stats);
+  return {
+    maxHealth: entry.maxHealth ?? computed.resources.health,
+    currentHealth: entry.maxHealth ?? computed.resources.health,
+    maxFocus: entry.maxFocus ?? computed.resources.focus,
+    currentFocus: entry.maxFocus ?? computed.resources.focus,
+    maxInvestiture: entry.maxInvestiture ?? computed.resources.investiture,
+    currentInvestiture: entry.maxInvestiture ?? computed.resources.investiture,
+  };
 }
 
 @Component({
@@ -105,6 +127,7 @@ interface EditableCombatParticipant {
               <span>Role</span>
               <span>HP</span>
               <span>Focus</span>
+              <span>Investiture</span>
               <span></span>
             </div>
             @for (group of participantGroups(); track group.label) {
@@ -142,6 +165,13 @@ interface EditableCombatParticipant {
                         min="0"
                         placeholder="Start Focus"
                         (input)="updateNumberField(participant.participantId, 'currentFocus', $any($event.target).value)"
+                      />
+                      <input
+                        [value]="participant.currentInvestiture ?? ''"
+                        type="number"
+                        min="0"
+                        placeholder="Start Investiture"
+                        (input)="updateNumberField(participant.participantId, 'currentInvestiture', $any($event.target).value)"
                       />
                       <button type="button" class="button-outline button-danger micro-button" (click)="removeParticipant(participant.participantId)">Remove</button>
                       @if (participant.side === 'enemy' || participant.side === 'npc') {
@@ -190,6 +220,7 @@ export class CombatSetupPageComponent {
       imagePath?: string;
       maxHealth?: number;
       maxFocus?: number;
+      maxInvestiture?: number;
       presetActions: CombatPresetAction[];
     }>
   >([]);
@@ -225,26 +256,22 @@ export class CombatSetupPageComponent {
       this.sessionId.set(sessionId);
       void this.sessionStore.getDashboard(sessionId).then((dashboard) => {
         const seededParticipants: EditableCombatParticipant[] = dashboard.session.partyMembers.map((member) => ({
+          ...computeCharacterResources(member),
           participantId: member.id,
           name: member.name,
           side: member.side,
           role: member.role,
           imagePath: member.imagePath,
-          currentHealth: member.maxHealth,
-          currentFocus: member.maxFocus ?? 0,
-          maxHealth: member.maxHealth,
-          maxFocus: member.maxFocus,
           presetActions: [],
         }));
         this.enemyTemplates.set(
           dashboard.participantTemplates.map((template) => ({
+            ...computeCharacterResources(template),
             participantId: template.id,
             name: template.name,
             side: template.side,
             role: template.role,
             imagePath: template.imagePath,
-            maxHealth: template.maxHealth,
-            maxFocus: template.maxFocus,
             presetActions: [...template.presetActions],
           })),
         );
@@ -267,8 +294,10 @@ export class CombatSetupPageComponent {
         presetActions: participant.presetActions,
         currentHealth: participant.currentHealth ?? undefined,
         currentFocus: participant.currentFocus ?? 0,
+        currentInvestiture: participant.currentInvestiture ?? 0,
         maxHealth: participant.maxHealth ?? undefined,
         maxFocus: participant.maxFocus ?? undefined,
+        maxInvestiture: participant.maxInvestiture ?? undefined,
       })),
     };
     const combat = await this.combatStore.create(this.sessionId(), payload);
@@ -306,8 +335,10 @@ export class CombatSetupPageComponent {
         presetActions: [...template.presetActions],
         currentHealth: template.maxHealth,
         currentFocus: template.maxFocus ?? 0,
+        currentInvestiture: template.maxInvestiture ?? 0,
         maxHealth: template.maxHealth,
         maxFocus: template.maxFocus,
+        maxInvestiture: template.maxInvestiture,
       },
     ]);
   }
@@ -337,7 +368,7 @@ export class CombatSetupPageComponent {
 
   updateNumberField(
     participantId: string,
-    field: 'currentHealth' | 'currentFocus',
+    field: 'currentHealth' | 'currentFocus' | 'currentInvestiture',
     value: string,
   ): void {
     const normalized = value === '' ? undefined : Number(value);

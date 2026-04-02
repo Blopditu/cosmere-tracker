@@ -24,3 +24,11 @@ The tool emits:
 - `candidates.jsonl`
 
 This extractor is intentionally high-precision. It emits fewer candidates and is designed for a fresh re-import, not compatibility with older noisy handbook artifact batches.
+
+For the first curated chapter import, build the checked-in Chapter 3 artifact with:
+
+```bash
+npm run build:chapter3-artifact
+```
+
+That writes a review-ready artifact bundle to `.import-cache/chapter-3-character-statistics`.
