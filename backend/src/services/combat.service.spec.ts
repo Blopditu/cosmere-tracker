@@ -53,6 +53,8 @@ const DEFAULT_COMBAT_INPUT: CreateCombatInput = {
           supportsDamage: true,
           defaultModifier: 5,
           defaultDamageFormula: '2d8 + 5',
+          rangeText: 'reach 5 ft.',
+          description: 'Attack +5, reach 5 ft., one target. Graze ... Hit ...',
         },
         {
           id: 'enemy-1-brace-wall',
@@ -221,6 +223,8 @@ describe('CombatService phase rules', () => {
     expect(enemy?.presetActions).toHaveLength(2);
     expect(enemy?.presetActions[0]?.name).toBe('Debilitate');
     expect(enemy?.presetActions[1]?.kind).toBe('reaction');
+    expect(enemy?.presetActions[0]?.rangeText).toBe('reach 5 ft.');
+    expect(enemy?.presetActions[0]?.description).toContain('Attack +5');
   });
 
   it('counts preset reactions by stored action kind in combat summaries', async () => {

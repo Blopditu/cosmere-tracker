@@ -1,18 +1,28 @@
 import { CommonModule } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { CharacterStatSheet, ParticipantTemplate, PartyMember, computeCharacterStatSheet, createEmptyCharacterStatSheet } from '@shared/domain';
+import { createId } from '../../core/default-data';
 import { SessionStoreService } from '../../core/session-store.service';
 import { CombatPresetActionEditorComponent } from '../../shared/combat-preset-action-editor.component';
 import { CharacterStatSheetEditorComponent } from '../../shared/character-stat-sheet-editor.component';
+import { EnemySupplementEditorComponent } from '../../shared/enemy-supplement-editor.component';
 import { RosharIconComponent } from '../../shared/roshar-icon.component';
+import { createStonewalkersAdversaryDrafts } from './stonewalkers-adversaries.data';
 
 const PARTY_VIEW = 'party';
 const ENEMY_VIEW = 'enemy';
+const IMPORTED_DRAFT_LABEL = 'Imported draft';
 type RosterView = typeof PARTY_VIEW | typeof ENEMY_VIEW;
 
 @Component({
   selector: 'app-campaign-roster-page',
-  imports: [CommonModule, RosharIconComponent, CombatPresetActionEditorComponent, CharacterStatSheetEditorComponent],
+  imports: [
+    CommonModule,
+    RosharIconComponent,
+    CombatPresetActionEditorComponent,
+    CharacterStatSheetEditorComponent,
+    EnemySupplementEditorComponent,
+  ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <section class="card engraved-panel campaign-roster-card" data-tour="campaign-roster">
@@ -55,7 +65,7 @@ type RosterView = typeof PARTY_VIEW | typeof ENEMY_VIEW;
                   <button type="button" class="roster-selector-button" (click)="selectPartyMember(member.id)">
                     <div class="roster-selector-copy">
                       <strong>{{ member.name || 'New player' }}</strong>
-                      <small>{{ member.role || 'No role set' }}</small>
+                      <small>{{ playerSubtitle(member) }}</small>
                     </div>
                     <div class="roster-selector-resources">
                       <span class="tag-chip">HP {{ resourceSummary(member).health }}</span>
@@ -87,6 +97,10 @@ type RosterView = typeof PARTY_VIEW | typeof ENEMY_VIEW;
                     <span>Role</span>
                     <input type="text" [value]="member.role || ''" placeholder="Role" (input)="updatePartyText(member.id, 'role', textValue($event))" />
                   </label>
+                  <label class="compact-field">
+                    <span>Level</span>
+                    <input type="number" min="1" [value]="member.level ?? ''" placeholder="1" (input)="updatePartyLevel(member.id, numericValue($event))" />
+                  </label>
                 </div>
                 <div class="roster-detail-side">
                   <button type="button" class="button-outline button-danger micro-button" (click)="confirmRosterRemoval('party', member.id, member.name)">
@@ -109,10 +123,16 @@ type RosterView = typeof PARTY_VIEW | typeof ENEMY_VIEW;
                 <button type="button" class="button-outline micro-button" [class.active]="rosterView() === 'party'" (click)="rosterView.set('party')">Players</button>
                 <button type="button" class="button-outline micro-button" [class.active]="rosterView() === 'enemy'" (click)="rosterView.set('enemy')">Enemies</button>
               </div>
-              <button type="button" class="button-outline shell-shortcut" (click)="addEnemyTemplate()">
-                <app-roshar-icon key="aid" label="Add enemy template" tone="ruby" [size]="16" />
-                <span>Add enemy</span>
-              </button>
+              <div class="button-row">
+                <button type="button" class="button-outline shell-shortcut" (click)="importStonewalkersAdversaries()">
+                  <app-roshar-icon key="chronicle" label="Import Stonewalkers adversaries" tone="topaz" [size]="16" />
+                  <span>Import Stonewalkers</span>
+                </button>
+                <button type="button" class="button-outline shell-shortcut" (click)="addEnemyTemplate()">
+                  <app-roshar-icon key="aid" label="Add enemy template" tone="ruby" [size]="16" />
+                  <span>Add enemy</span>
+                </button>
+              </div>
             </div>
             <div class="roster-selector-list">
               @for (enemy of enemyDraft(); track enemy.id) {
@@ -126,6 +146,9 @@ type RosterView = typeof PARTY_VIEW | typeof ENEMY_VIEW;
                       <span class="tag-chip">HP {{ resourceSummary(enemy).health }}</span>
                       <span class="tag-chip">Focus {{ resourceSummary(enemy).focus }}</span>
                       <span class="tag-chip">Investiture {{ resourceSummary(enemy).investiture }}</span>
+                      @if (isImportedEnemy(enemy.id)) {
+                        <span class="tag-chip">{{ importedDraftLabel }}</span>
+                      }
                     </div>
                   </button>
                   <div class="roster-selector-actions">
@@ -182,6 +205,14 @@ type RosterView = typeof PARTY_VIEW | typeof ENEMY_VIEW;
                   emptyLabel="No preset actions yet. Add reusable enemy actions here."
                   [compact]="true"
                   (actionsChange)="updateEnemyPresetActions(enemy.id, $event)" />
+                <app-enemy-supplement-editor
+                  [features]="enemy.features"
+                  [tactics]="enemy.tactics || ''"
+                  [sourceAdversaryName]="enemy.sourceAdversaryName || ''"
+                  (addFeature)="addEnemyFeature(enemy.id)"
+                  (removeFeature)="removeEnemyFeature(enemy.id, $event)"
+                  (featureChange)="updateEnemyFeature(enemy.id, $event.index, $event.value)"
+                  (tacticsChange)="updateEnemyTactics(enemy.id, $event)" />
               </div>
             } @else {
               <article class="empty-card roster-detail-empty">No enemy template selected. Add or choose an enemy to edit its lean stat block.</article>
@@ -221,6 +252,7 @@ export class CampaignRosterPageComponent {
   private readonly sessionStore = inject(SessionStoreService);
   readonly partyDraft = signal<PartyMember[]>([]);
   readonly enemyDraft = signal<ParticipantTemplate[]>([]);
+  readonly importedEnemyIds = signal<ReadonlySet<string>>(new Set<string>());
   readonly rosterView = signal<RosterView>('party');
   readonly uploadingEnemyId = signal('');
   readonly uploadError = signal('');
@@ -229,6 +261,7 @@ export class CampaignRosterPageComponent {
   readonly selectedEnemyId = signal('');
   readonly selectedPartyMember = computed(() => this.partyDraft().find((member) => member.id === this.selectedPartyMemberId()));
   readonly selectedEnemy = computed(() => this.enemyDraft().find((enemy) => enemy.id === this.selectedEnemyId()));
+  protected readonly importedDraftLabel = IMPORTED_DRAFT_LABEL;
 
   constructor() {
     void this.load();
@@ -237,19 +270,21 @@ export class CampaignRosterPageComponent {
   async load(): Promise<void> {
     const roster = await this.sessionStore.getCampaignRoster();
     const partyMembers = roster.partyMembers.map((member) => ({ ...member }));
-    const enemyTemplates = roster.participantTemplates.map((template) => ({ ...template, presetActions: [...template.presetActions] }));
+    const enemyTemplates = roster.participantTemplates.map((template) => this.cloneEnemyTemplate(template));
     this.partyDraft.set(partyMembers);
     this.enemyDraft.set(enemyTemplates);
+    this.importedEnemyIds.set(new Set<string>());
     this.syncPartySelection();
     this.syncEnemySelection();
   }
 
   addPartyMember(): void {
     const member: PartyMember = {
-      id: crypto.randomUUID(),
+      id: createId('party-member'),
       name: '',
       side: 'pc',
       role: '',
+      level: 1,
       stats: createEmptyCharacterStatSheet(),
       maxHealth: undefined,
       maxFocus: undefined,
@@ -261,7 +296,7 @@ export class CampaignRosterPageComponent {
 
   addEnemyTemplate(): void {
     const enemy: ParticipantTemplate = {
-      id: crypto.randomUUID(),
+      id: createId('enemy-template'),
       name: '',
       side: 'enemy',
       role: '',
@@ -269,10 +304,30 @@ export class CampaignRosterPageComponent {
       maxHealth: undefined,
       maxFocus: undefined,
       maxInvestiture: undefined,
+      features: [],
+      tactics: '',
+      sourceAdversaryName: undefined,
       presetActions: [],
     };
     this.enemyDraft.update((items) => [...items, enemy]);
     this.selectedEnemyId.set(enemy.id);
+  }
+
+  importStonewalkersAdversaries(): void {
+    const importedEnemies = createStonewalkersAdversaryDrafts();
+    if (!importedEnemies.length) {
+      return;
+    }
+    this.enemyDraft.update((items) => [...items, ...importedEnemies.map((enemy) => this.cloneEnemyTemplate(enemy))]);
+    this.importedEnemyIds.update((current) => {
+      const next = new Set(current);
+      for (const enemy of importedEnemies) {
+        next.add(enemy.id);
+      }
+      return next;
+    });
+    this.rosterView.set(ENEMY_VIEW);
+    this.selectedEnemyId.set(importedEnemies[0]!.id);
   }
 
   selectPartyMember(memberId: string): void {
@@ -287,13 +342,54 @@ export class CampaignRosterPageComponent {
     this.partyDraft.update((items) => items.map((member) => (member.id === memberId ? { ...member, [field]: value } : member)));
   }
 
+  updatePartyLevel(memberId: string, value: number | undefined): void {
+    this.partyDraft.update((items) =>
+      items.map((member) => (member.id === memberId ? { ...member, level: value } : member)),
+    );
+  }
+
   updateEnemyText(enemyId: string, field: 'name' | 'role', value: string): void {
     this.enemyDraft.update((items) => items.map((enemy) => (enemy.id === enemyId ? { ...enemy, [field]: value } : enemy)));
   }
 
   updateEnemyPresetActions(enemyId: string, presetActions: ParticipantTemplate['presetActions']): void {
     this.enemyDraft.update((items) =>
-      items.map((enemy) => (enemy.id === enemyId ? { ...enemy, presetActions: [...presetActions] } : enemy)),
+      items.map((enemy) =>
+        enemy.id === enemyId ? { ...enemy, presetActions: presetActions.map((action) => ({ ...action })) } : enemy,
+      ),
+    );
+  }
+
+  addEnemyFeature(enemyId: string): void {
+    this.enemyDraft.update((items) =>
+      items.map((enemy) => (enemy.id === enemyId ? { ...enemy, features: [...enemy.features, ''] } : enemy)),
+    );
+  }
+
+  removeEnemyFeature(enemyId: string, index: number): void {
+    this.enemyDraft.update((items) =>
+      items.map((enemy) =>
+        enemy.id === enemyId ? { ...enemy, features: enemy.features.filter((_, featureIndex) => featureIndex !== index) } : enemy,
+      ),
+    );
+  }
+
+  updateEnemyFeature(enemyId: string, index: number, value: string): void {
+    this.enemyDraft.update((items) =>
+      items.map((enemy) =>
+        enemy.id === enemyId
+          ? {
+              ...enemy,
+              features: enemy.features.map((feature, featureIndex) => (featureIndex === index ? value : feature)),
+            }
+          : enemy,
+      ),
+    );
+  }
+
+  updateEnemyTactics(enemyId: string, tactics: string): void {
+    this.enemyDraft.update((items) =>
+      items.map((enemy) => (enemy.id === enemyId ? { ...enemy, tactics } : enemy)),
     );
   }
 
@@ -323,6 +419,14 @@ export class CampaignRosterPageComponent {
       this.syncPartySelection();
     } else {
       this.enemyDraft.update((items) => items.filter((enemy) => enemy.id !== pending.id));
+      this.importedEnemyIds.update((current) => {
+        if (!current.has(pending.id)) {
+          return current;
+        }
+        const next = new Set(current);
+        next.delete(pending.id);
+        return next;
+      });
       this.syncEnemySelection();
     }
     this.pendingRemoval.set(null);
@@ -377,6 +481,22 @@ export class CampaignRosterPageComponent {
     return (event.target as HTMLInputElement).value;
   }
 
+  numericValue(event: Event): number | undefined {
+    const rawValue = (event.target as HTMLInputElement).value;
+    const parsed = Number(rawValue);
+    return Number.isFinite(parsed) && parsed > 0 ? Math.trunc(parsed) : undefined;
+  }
+
+  playerSubtitle(member: PartyMember): string {
+    if (member.role && member.level) {
+      return `Level ${member.level} ${member.role}`;
+    }
+    if (member.level) {
+      return `Level ${member.level}`;
+    }
+    return member.role || 'No role set';
+  }
+
   private syncPartySelection(): void {
     if (this.partyDraft().some((member) => member.id === this.selectedPartyMemberId())) {
       return;
@@ -426,7 +546,32 @@ export class CampaignRosterPageComponent {
       maxFocus: template.maxFocus ?? undefined,
       maxInvestiture: template.maxInvestiture ?? undefined,
       imagePath: template.imagePath || undefined,
-      presetActions: template.presetActions,
+      features: template.features.map((feature) => feature.trim()).filter(Boolean),
+      tactics: template.tactics?.trim() || undefined,
+      sourceAdversaryName: template.sourceAdversaryName?.trim() || undefined,
+      presetActions: template.presetActions.map((action) => ({ ...action })),
+    };
+  }
+
+  isImportedEnemy(enemyId: string): boolean {
+    return this.importedEnemyIds().has(enemyId);
+  }
+
+  private cloneEnemyTemplate(template: ParticipantTemplate): ParticipantTemplate {
+    return {
+      ...template,
+      stats: {
+        ...template.stats,
+        attributeScores: { ...template.stats.attributeScores },
+        skillRanks: { ...template.stats.skillRanks },
+        expertises: template.stats.expertises.map((expertise) => ({ ...expertise })),
+        resourceBonuses: { ...template.stats.resourceBonuses },
+        resourceOverrides: { ...template.stats.resourceOverrides },
+        defenseBonuses: { ...template.stats.defenseBonuses },
+        derivedOverrides: { ...template.stats.derivedOverrides },
+      },
+      features: [...template.features],
+      presetActions: template.presetActions.map((action) => ({ ...action })),
     };
   }
 }

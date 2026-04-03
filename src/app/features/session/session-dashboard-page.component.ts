@@ -10,9 +10,11 @@ import {
   computeCharacterStatSheet,
   createEmptyCharacterStatSheet,
 } from '@shared/domain';
+import { createId } from '../../core/default-data';
 import { SessionStoreService } from '../../core/session-store.service';
 import { CombatPresetActionEditorComponent } from '../../shared/combat-preset-action-editor.component';
 import { CharacterStatSheetEditorComponent } from '../../shared/character-stat-sheet-editor.component';
+import { EnemySupplementEditorComponent } from '../../shared/enemy-supplement-editor.component';
 import { RosharIconComponent } from '../../shared/roshar-icon.component';
 import { CombatStore } from '../combat-tracker/combat.store';
 
@@ -22,7 +24,14 @@ type RosterView = typeof PARTY_VIEW | typeof ENEMY_VIEW;
 
 @Component({
   selector: 'app-session-dashboard-page',
-  imports: [CommonModule, RouterLink, RosharIconComponent, CombatPresetActionEditorComponent, CharacterStatSheetEditorComponent],
+  imports: [
+    CommonModule,
+    RouterLink,
+    RosharIconComponent,
+    CombatPresetActionEditorComponent,
+    CharacterStatSheetEditorComponent,
+    EnemySupplementEditorComponent,
+  ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     @if (dashboard()) {
@@ -181,7 +190,7 @@ type RosterView = typeof PARTY_VIEW | typeof ENEMY_VIEW;
                       <button type="button" class="roster-selector-button" (click)="selectPartyMember(member.id)">
                         <div class="roster-selector-copy">
                           <strong>{{ member.name || 'New player' }}</strong>
-                          <small>{{ member.role || 'No role set' }}</small>
+                          <small>{{ playerSubtitle(member) }}</small>
                         </div>
                         <div class="roster-selector-resources">
                           <span class="tag-chip">HP {{ resourceSummary(member).health }}</span>
@@ -213,6 +222,10 @@ type RosterView = typeof PARTY_VIEW | typeof ENEMY_VIEW;
                       <label class="compact-field">
                         <span>Role</span>
                         <input type="text" [value]="member.role || ''" placeholder="Role" (input)="updatePartyText(member.id, 'role', textValue($event))" />
+                      </label>
+                      <label class="compact-field">
+                        <span>Level</span>
+                        <input type="number" min="1" [value]="member.level ?? ''" placeholder="1" (input)="updatePartyLevel(member.id, numericValue($event))" />
                       </label>
                     </div>
                     <div class="roster-detail-side">
@@ -312,6 +325,14 @@ type RosterView = typeof PARTY_VIEW | typeof ENEMY_VIEW;
                       emptyLabel="No preset actions yet. Add reusable enemy actions here."
                       [compact]="true"
                       (actionsChange)="updateEnemyPresetActions(enemy.id, $event)" />
+                    <app-enemy-supplement-editor
+                      [features]="enemy.features"
+                      [tactics]="enemy.tactics || ''"
+                      [sourceAdversaryName]="enemy.sourceAdversaryName || ''"
+                      (addFeature)="addEnemyFeature(enemy.id)"
+                      (removeFeature)="removeEnemyFeature(enemy.id, $event)"
+                      (featureChange)="updateEnemyFeature(enemy.id, $event.index, $event.value)"
+                      (tacticsChange)="updateEnemyTactics(enemy.id, $event)" />
                   </div>
                 } @else {
                   <article class="empty-card roster-detail-empty">No enemy selected. Choose or add an enemy template to edit its stat block.</article>
@@ -335,7 +356,7 @@ type RosterView = typeof PARTY_VIEW | typeof ENEMY_VIEW;
                 <article class="list-card ledger-row">
                   <div>
                     <h3>{{ member.name }}</h3>
-                    <p>{{ member.role || 'No role set' }}</p>
+                    <p>{{ playerSubtitle(member) }}</p>
                   </div>
                   <div class="ledger-meta">
                     <span class="tag-chip">
@@ -471,22 +492,23 @@ export class SessionDashboardPageComponent {
     this.dashboard.set(dashboard);
     this.analytics.set(analytics);
     this.partyDraft.set(dashboard.campaignPartyMembers.map((member) => ({ ...member })));
-    this.enemyDraft.set(dashboard.participantTemplates.map((enemy) => ({ ...enemy, presetActions: [...enemy.presetActions] })));
+    this.enemyDraft.set(dashboard.participantTemplates.map((enemy) => this.cloneEnemyTemplate(enemy)));
     this.sessionPlayerIdsDraft.set([...dashboard.session.playerIds]);
     this.syncPartySelection();
     this.syncEnemySelection();
   }
 
   addPartyMember(): void {
-    const id = crypto.randomUUID();
+    const id = createId('party-member');
     this.partyDraft.update((items) => [
       ...items,
       {
         id,
         name: '',
         side: 'pc',
-        role: '',
-        stats: createEmptyCharacterStatSheet(),
+      role: '',
+      level: 1,
+      stats: createEmptyCharacterStatSheet(),
         maxHealth: undefined,
         maxFocus: undefined,
         maxInvestiture: undefined,
@@ -497,7 +519,7 @@ export class SessionDashboardPageComponent {
   }
 
   addEnemyTemplate(): void {
-    const enemyId = crypto.randomUUID();
+    const enemyId = createId('enemy-template');
     this.enemyDraft.update((items) => [
       ...items,
       {
@@ -509,6 +531,9 @@ export class SessionDashboardPageComponent {
         maxHealth: undefined,
         maxFocus: undefined,
         maxInvestiture: undefined,
+        features: [],
+        tactics: '',
+        sourceAdversaryName: undefined,
         presetActions: [],
       },
     ]);
@@ -527,13 +552,54 @@ export class SessionDashboardPageComponent {
     this.partyDraft.update((items) => items.map((member) => (member.id === memberId ? { ...member, [field]: value } : member)));
   }
 
+  updatePartyLevel(memberId: string, value: number | undefined): void {
+    this.partyDraft.update((items) =>
+      items.map((member) => (member.id === memberId ? { ...member, level: value } : member)),
+    );
+  }
+
   updateEnemyText(enemyId: string, field: 'name' | 'role', value: string): void {
     this.enemyDraft.update((items) => items.map((enemy) => (enemy.id === enemyId ? { ...enemy, [field]: value } : enemy)));
   }
 
   updateEnemyPresetActions(enemyId: string, presetActions: ParticipantTemplate['presetActions']): void {
     this.enemyDraft.update((items) =>
-      items.map((enemy) => (enemy.id === enemyId ? { ...enemy, presetActions: [...presetActions] } : enemy)),
+      items.map((enemy) =>
+        enemy.id === enemyId ? { ...enemy, presetActions: presetActions.map((action) => ({ ...action })) } : enemy,
+      ),
+    );
+  }
+
+  addEnemyFeature(enemyId: string): void {
+    this.enemyDraft.update((items) =>
+      items.map((enemy) => (enemy.id === enemyId ? { ...enemy, features: [...enemy.features, ''] } : enemy)),
+    );
+  }
+
+  removeEnemyFeature(enemyId: string, index: number): void {
+    this.enemyDraft.update((items) =>
+      items.map((enemy) =>
+        enemy.id === enemyId ? { ...enemy, features: enemy.features.filter((_, featureIndex) => featureIndex !== index) } : enemy,
+      ),
+    );
+  }
+
+  updateEnemyFeature(enemyId: string, index: number, value: string): void {
+    this.enemyDraft.update((items) =>
+      items.map((enemy) =>
+        enemy.id === enemyId
+          ? {
+              ...enemy,
+              features: enemy.features.map((feature, featureIndex) => (featureIndex === index ? value : feature)),
+            }
+          : enemy,
+      ),
+    );
+  }
+
+  updateEnemyTactics(enemyId: string, tactics: string): void {
+    this.enemyDraft.update((items) =>
+      items.map((enemy) => (enemy.id === enemyId ? { ...enemy, tactics } : enemy)),
     );
   }
 
@@ -644,7 +710,10 @@ export class SessionDashboardPageComponent {
       maxFocus: entry.maxFocus ?? undefined,
       maxInvestiture: entry.maxInvestiture ?? undefined,
       imagePath: entry.imagePath || undefined,
-      presetActions: 'presetActions' in entry ? [...entry.presetActions] : [],
+      features: 'features' in entry ? entry.features.map((feature) => feature.trim()).filter(Boolean) : [],
+      tactics: 'tactics' in entry ? entry.tactics?.trim() || undefined : undefined,
+      sourceAdversaryName: 'sourceAdversaryName' in entry ? entry.sourceAdversaryName?.trim() || undefined : undefined,
+      presetActions: 'presetActions' in entry ? entry.presetActions.map((action) => ({ ...action })) : [],
     };
   }
 
@@ -655,6 +724,22 @@ export class SessionDashboardPageComponent {
 
   textValue(event: Event): string {
     return (event.target as HTMLInputElement).value;
+  }
+
+  numericValue(event: Event): number | undefined {
+    const rawValue = (event.target as HTMLInputElement).value;
+    const parsed = Number(rawValue);
+    return Number.isFinite(parsed) && parsed > 0 ? Math.trunc(parsed) : undefined;
+  }
+
+  playerSubtitle(member: PartyMember): string {
+    if (member.role && member.level) {
+      return `Level ${member.level} ${member.role}`;
+    }
+    if (member.level) {
+      return `Level ${member.level}`;
+    }
+    return member.role || 'No role set';
   }
 
   private syncPartySelection(): void {
@@ -669,5 +754,23 @@ export class SessionDashboardPageComponent {
       return;
     }
     this.selectedEnemyId.set(this.enemyDraft()[0]?.id ?? '');
+  }
+
+  private cloneEnemyTemplate(template: ParticipantTemplate): ParticipantTemplate {
+    return {
+      ...template,
+      stats: {
+        ...template.stats,
+        attributeScores: { ...template.stats.attributeScores },
+        skillRanks: { ...template.stats.skillRanks },
+        expertises: template.stats.expertises.map((expertise) => ({ ...expertise })),
+        resourceBonuses: { ...template.stats.resourceBonuses },
+        resourceOverrides: { ...template.stats.resourceOverrides },
+        defenseBonuses: { ...template.stats.defenseBonuses },
+        derivedOverrides: { ...template.stats.derivedOverrides },
+      },
+      features: [...template.features],
+      presetActions: template.presetActions.map((action) => ({ ...action })),
+    };
   }
 }

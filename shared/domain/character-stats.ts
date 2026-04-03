@@ -521,18 +521,11 @@ function normalizeSkillRanks(source: Record<string, number> | undefined): Record
 
 function normalizeExpertises(expertises: CharacterExpertise[] | undefined): CharacterExpertise[] {
   return (expertises ?? [])
-    .map((expertise) => {
-      const name = expertise.name?.trim();
-      if (!name) {
-        return null;
-      }
-      return {
-        id: expertise.id,
-        name,
-        category: CHARACTER_EXPERTISE_CATEGORIES.includes(expertise.category) ? expertise.category : 'utility',
-      } satisfies CharacterExpertise;
-    })
-    .filter((expertise): expertise is CharacterExpertise => Boolean(expertise));
+    .map((expertise) => ({
+      id: expertise.id,
+      name: expertise.name?.trim() ?? '',
+      category: CHARACTER_EXPERTISE_CATEGORIES.includes(expertise.category) ? expertise.category : 'utility',
+    }));
 }
 
 function normalizeDerivedOverrides(

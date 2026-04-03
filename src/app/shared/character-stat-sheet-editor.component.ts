@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, computed, input, output } from '@angular/core';
+import { ChangeDetectionStrategy, Component, DestroyRef, computed, inject, input, output, signal } from '@angular/core';
 import {
   CharacterAttributeKey,
   CharacterDefenseKey,
@@ -10,10 +10,14 @@ import {
   createEmptyCharacterStatSheet,
   normalizeCharacterStatSheet,
 } from '@shared/domain';
+import { createId } from '../core/default-data';
 import {
   CharacterStatSheetEditorActions,
   cloneNormalizedStatSheet,
+  highlightsForAttribute,
+  highlightsForSkill,
   nextSteppedValue,
+  StatHighlightToken,
 } from './character-stat-sheet-editor.helpers';
 import { EnemyStatBlockEditorComponent } from './enemy-stat-block-editor.component';
 import { PartyStatSheetEditorComponent } from './party-stat-sheet-editor.component';
@@ -24,6 +28,9 @@ const SKILL_RANK_MAXIMUM = 5;
 const RESOURCE_MINIMUM = 0;
 const ATTRIBUTE_MINIMUM = 0;
 const DEFLECT_MINIMUM = 0;
+const HIGHLIGHT_DURATION_MS = 950;
+const EMPTY_HIGHLIGHTS = new Set<StatHighlightToken>();
+const EXPERTISE_ID_PREFIX = 'expertise';
 
 @Component({
   selector: 'app-character-stat-sheet-editor',
@@ -34,12 +41,14 @@ const DEFLECT_MINIMUM = 0;
       <app-party-stat-sheet-editor
         [stats]="normalizedStats()"
         [computedStats]="computedStats()"
-        [actions]="editorActions" />
+        [actions]="editorActions"
+        [highlightedTokens]="highlightedTokens()" />
     } @else {
       <app-enemy-stat-block-editor
         [stats]="normalizedStats()"
         [computedStats]="computedStats()"
-        [actions]="editorActions" />
+        [actions]="editorActions"
+        [highlightedTokens]="highlightedTokens()" />
     }
   `,
 })
@@ -48,12 +57,16 @@ export class CharacterStatSheetEditorComponent {
   readonly mode = input<'party' | 'enemy'>('party');
   readonly statsChange = output<CharacterStatSheet>();
 
+  private readonly destroyRef = inject(DestroyRef);
   readonly normalizedStats = computed(() => normalizeCharacterStatSheet(this.stats()));
   readonly computedStats = computed(() => computeCharacterStatSheet(this.normalizedStats()));
+  readonly highlightedTokens = signal<ReadonlySet<StatHighlightToken>>(EMPTY_HIGHLIGHTS);
+
+  private highlightTimeoutId: ReturnType<typeof setTimeout> | null = null;
 
   readonly editorActions: CharacterStatSheetEditorActions = {
-    stepAttribute: (key, delta) => this.stepAttribute(key, delta),
-    setSkillRank: (key, value) => this.setSkillRank(key, value),
+    stepAttribute: (key, delta) => this.stepAttributeAndHighlight(key, delta),
+    setSkillRank: (key, value) => this.setSkillRankAndHighlight(key, value),
     stepResourceBonus: (key, delta) => this.stepResourceBonus(key, delta),
     stepResourceOverride: (key, delta) => this.stepResourceOverride(key, delta),
     stepDefenseBonus: (key, delta) => this.stepDefenseBonus(key, delta),
@@ -64,6 +77,30 @@ export class CharacterStatSheetEditorComponent {
     updateExpertiseCategory: (index, category) => this.updateExpertiseCategory(index, category),
     removeExpertise: (index) => this.removeExpertise(index),
   };
+
+  constructor() {
+    this.destroyRef.onDestroy(() => {
+      if (this.highlightTimeoutId !== null) {
+        clearTimeout(this.highlightTimeoutId);
+      }
+    });
+  }
+
+  private stepAttributeAndHighlight(key: CharacterAttributeKey, delta: number): void {
+    if (delta === ZERO) {
+      return;
+    }
+    this.setHighlights(highlightsForAttribute(key));
+    this.stepAttribute(key, delta);
+  }
+
+  private setSkillRankAndHighlight(key: string, value: number): void {
+    if ((this.normalizedStats().skillRanks[key] ?? ZERO) === value) {
+      return;
+    }
+    this.setHighlights(highlightsForSkill(key));
+    this.setSkillRank(key, value);
+  }
 
   private stepAttribute(key: CharacterAttributeKey, delta: number): void {
     this.emitStats((next) => {
@@ -152,11 +189,12 @@ export class CharacterStatSheetEditorComponent {
   }
 
   private addExpertise(): void {
+    console.log('Adding expertise');
     this.emitStats((next) => {
       next.expertises = [
         ...next.expertises,
         {
-          id: crypto.randomUUID(),
+          id: createId(EXPERTISE_ID_PREFIX),
           name: '',
           category: 'utility',
         },
@@ -190,5 +228,16 @@ export class CharacterStatSheetEditorComponent {
     const next = cloneNormalizedStatSheet(this.normalizedStats());
     mutator(next);
     this.statsChange.emit(normalizeCharacterStatSheet(next));
+  }
+
+  private setHighlights(tokens: ReadonlySet<StatHighlightToken>): void {
+    this.highlightedTokens.set(tokens);
+    if (this.highlightTimeoutId !== null) {
+      clearTimeout(this.highlightTimeoutId);
+    }
+    this.highlightTimeoutId = setTimeout(() => {
+      this.highlightedTokens.set(EMPTY_HIGHLIGHTS);
+      this.highlightTimeoutId = null;
+    }, HIGHLIGHT_DURATION_MS);
   }
 }

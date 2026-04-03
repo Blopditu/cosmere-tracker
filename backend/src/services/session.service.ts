@@ -42,6 +42,14 @@ function resolveActionKind(action: { actionType: string; actionKind?: ActionKind
   return action.actionKind ?? ACTION_CATALOG.find((item) => item.key === action.actionType || item.name === action.actionType)?.type;
 }
 
+function normalizedOptionalLevel(level: number | undefined): number | undefined {
+  if (!Number.isFinite(level)) {
+    return undefined;
+  }
+  const normalized = Math.trunc(level as number);
+  return normalized > 0 ? normalized : undefined;
+}
+
 function summarizeCombatRowsByName(combat: CombatRecord, combatRolls: RollEvent[]) {
   return combat.participants.map((participant) => {
     const actionEvents = combat.actionEvents.filter((event) => event.actorId === participant.id);
@@ -110,6 +118,7 @@ function normalizePartyMember(member: PartyMember): PartyMember {
     ...member,
     name: member.name.trim(),
     side: member.side === 'ally' ? 'ally' : 'pc',
+    level: normalizedOptionalLevel(member.level),
     stats,
     role: member.role?.trim() || undefined,
     notes: member.notes?.trim() || undefined,
@@ -135,11 +144,20 @@ function normalizeParticipantTemplate(template: ParticipantTemplate): Participan
     role: template.role?.trim() || undefined,
     notes: template.notes?.trim() || undefined,
     imagePath: template.imagePath || undefined,
+    features: normalizeFeatures(template.features),
+    tactics: template.tactics?.trim() || undefined,
+    sourceAdversaryName: template.sourceAdversaryName?.trim() || undefined,
     maxHealth: computed.resources.health,
     maxFocus: computed.resources.focus,
     maxInvestiture: computed.resources.investiture,
     presetActions: normalizePresetActions(template.presetActions),
   };
+}
+
+function normalizeFeatures(features: string[] | undefined): string[] {
+  return (features ?? [])
+    .map((entry) => entry.trim())
+    .filter(Boolean);
 }
 
 function normalizePresetActions(actions: CombatPresetAction[] | undefined): CombatPresetAction[] {
@@ -167,12 +185,14 @@ function normalizePresetAction(action: CombatPresetAction | undefined): CombatPr
     supportsDamage: Boolean(action.supportsDamage),
     defaultModifier: action.defaultModifier ?? undefined,
     defaultDamageFormula: action.defaultDamageFormula?.trim() || undefined,
+    rangeText: action.rangeText?.trim() || undefined,
+    description: action.description?.trim() || undefined,
   };
 }
 
 function participantSignature(
   entry: Pick<PartyMember | ParticipantTemplate, 'name' | 'side' | 'role' | 'maxHealth' | 'maxFocus' | 'maxInvestiture' | 'notes' | 'imagePath' | 'stats'> &
-    Partial<Pick<ParticipantTemplate, 'presetActions'>>,
+    Partial<Pick<ParticipantTemplate, 'presetActions' | 'features' | 'tactics' | 'sourceAdversaryName'>>,
 ): string {
   const stats = normalizeCharacterStatSheet(entry.stats, {
     health: entry.maxHealth,
@@ -188,6 +208,9 @@ function participantSignature(
     maxInvestiture: entry.maxInvestiture ?? null,
     notes: entry.notes?.trim().toLowerCase() || '',
     imagePath: entry.imagePath || '',
+    features: 'features' in entry ? normalizeFeatures(entry.features).map((feature) => feature.toLowerCase()) : [],
+    tactics: 'tactics' in entry ? entry.tactics?.trim().toLowerCase() || '' : '',
+    sourceAdversaryName: 'sourceAdversaryName' in entry ? entry.sourceAdversaryName?.trim().toLowerCase() || '' : '',
     stats,
     presetActions: normalizePresetActions(entry.presetActions).map((action) => ({
       name: action.name.trim().toLowerCase(),
@@ -199,6 +222,8 @@ function participantSignature(
       supportsDamage: action.supportsDamage,
       defaultModifier: action.defaultModifier ?? null,
       defaultDamageFormula: action.defaultDamageFormula?.trim().toLowerCase() || '',
+      rangeText: action.rangeText?.trim().toLowerCase() || '',
+      description: action.description?.trim().toLowerCase() || '',
     })),
   });
 }

@@ -140,6 +140,7 @@ import {
                         type="button"
                         class="button-outline logger-choice-chip"
                         [class.active]="selectedActionChoiceId() === choice.id"
+                        [attr.title]="choice.helperText || null"
                         (click)="actionChoiceSelect.emit(choice.id)">
                         {{ choice.label }}
                       </button>

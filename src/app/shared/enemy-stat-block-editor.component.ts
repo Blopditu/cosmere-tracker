@@ -2,82 +2,52 @@ import { CommonModule } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, input } from '@angular/core';
 import {
   CHARACTER_RESOURCE_KEYS,
+  CharacterDerivedKey,
   CharacterStatSheet,
   ComputedCharacterStatSheet,
 } from '@shared/domain';
 import {
-  ATTRIBUTE_METADATA,
   CharacterStatSheetEditorActions,
+  derivedHighlightToken,
   ENEMY_ADVANCED_DERIVED_KEYS,
-  LEAN_ENEMY_SKILLS,
-  attributeLabel,
-  defenseRows,
+  ENEMY_STAT_CLUSTERS,
   derivedLabel,
   derivedOverrideValue,
   displayDerivedValue,
+  StatHighlightToken,
   resourceLabel,
 } from './character-stat-sheet-editor.helpers';
+import { ResourceBarComponent } from './resource-bar.component';
 import { SheetNumberStepperComponent } from './sheet-number-stepper.component';
-import { SheetRankPipsComponent } from './sheet-rank-pips.component';
+import { StatClusterComponent } from './stat-cluster.component';
+
+const ENEMY_VISIBLE_DERIVED_KEYS: readonly CharacterDerivedKey[] = ['movement-rate', 'senses-range'];
 
 @Component({
   selector: 'app-enemy-stat-block-editor',
-  imports: [CommonModule, SheetNumberStepperComponent, SheetRankPipsComponent],
+  imports: [CommonModule, ResourceBarComponent, SheetNumberStepperComponent, StatClusterComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <section class="enemy-sheet">
-      <section class="sheet-summary-band enemy-sheet-summary">
-        @for (resourceKey of resourceKeys; track resourceKey) {
-          <article class="sheet-summary-metric" [class.resource-investiture]="resourceKey === 'investiture'">
-            <span class="stat-label">{{ resourceLabel(resourceKey) }}</span>
-            <strong>{{ computedStats().resources[resourceKey] }}</strong>
-          </article>
-        }
-        @for (defense of defenses(); track defense.key) {
-          <article class="sheet-summary-metric defense-metric">
-            <span class="stat-label">{{ defense.label }}</span>
-            <strong>{{ defense.value }}</strong>
-          </article>
-        }
-      </section>
+      <app-resource-bar [resources]="computedStats().resources" [highlightedTokens]="highlightedTokens()" />
 
-      <div class="enemy-sheet-grid">
-        <section id="enemy-sheet-core" class="sheet-block sheet-block--enemy-core">
+      <div class="stat-cluster-grid">
+        @for (cluster of clusters; track cluster.key) {
+          <app-stat-cluster
+            [cluster]="cluster"
+            [stats]="stats()"
+            [computedStats]="computedStats()"
+            [actions]="actions()"
+            [highlightedTokens]="highlightedTokens()" />
+        }
+      </div>
+
+      <div class="sheet-utility-grid sheet-utility-grid--enemy">
+        <section class="sheet-utility-block">
           <div class="sheet-block-header">
-            <h4>Core stats</h4>
+            <h4>Combat values</h4>
           </div>
-
-          <div class="enemy-attribute-grid">
-            @for (attribute of attributes; track attribute.key) {
-              <article class="sheet-stat-card sheet-stat-card--compact">
-                <div class="sheet-stat-copy">
-                  <strong>{{ attribute.label }}</strong>
-                  <small>{{ attributeMeta(attribute.facet) }}</small>
-                </div>
-                <app-sheet-number-stepper
-                  [compact]="true"
-                  [value]="stats().attributeScores[attribute.key]"
-                  [minimum]="0"
-                  [decrementLabel]="'Lower ' + attribute.label"
-                  [incrementLabel]="'Raise ' + attribute.label"
-                  (valueChange)="actions().stepAttribute(attribute.key, $event - stats().attributeScores[attribute.key])" />
-              </article>
-            }
-          </div>
-
-          <div class="sheet-readout-list">
-            @for (defense of defenses(); track defense.key) {
-              <article class="sheet-readout-row">
-                <div>
-                  <strong>{{ defense.label }}</strong>
-                  <small>Defense</small>
-                </div>
-                <span class="sheet-readout-value">{{ defense.value }}</span>
-              </article>
-            }
-          </div>
-
-          <div class="enemy-derived-grid">
+          <div class="sheet-derived-list">
             <article class="sheet-derived-row sheet-derived-row--interactive">
               <div>
                 <strong>Deflect</strong>
@@ -90,43 +60,13 @@ import { SheetRankPipsComponent } from './sheet-rank-pips.component';
                 incrementLabel="Raise deflect"
                 (valueChange)="actions().stepDerivedNumber('deflect', $event - deflectValue())" />
             </article>
-            <article class="sheet-derived-row">
-              <div>
-                <strong>Movement Rate</strong>
-                <small>Current value</small>
-              </div>
-              <span class="sheet-readout-value">{{ displayDerivedValue(computedStats().derived['movement-rate']) }}</span>
-            </article>
-            <article class="sheet-derived-row">
-              <div>
-                <strong>Senses Range</strong>
-                <small>Current value</small>
-              </div>
-              <span class="sheet-readout-value">{{ displayDerivedValue(computedStats().derived['senses-range']) }}</span>
-            </article>
-          </div>
-        </section>
-
-        <section id="enemy-sheet-skills" class="sheet-block sheet-block--enemy-skills">
-          <div class="sheet-block-header">
-            <h4>Skills</h4>
-          </div>
-          <div class="enemy-skill-list">
-            @for (skill of displayedSkills; track skill.key) {
-              <article class="enemy-skill-row">
-                <div class="enemy-skill-copy">
-                  <strong>{{ skill.label }}</strong>
-                  <small>{{ attributeLabel(skill.attributeKey) }}</small>
+            @for (derivedKey of visibleDerivedKeys; track derivedKey) {
+              <article class="sheet-derived-row" [class.is-highlighted]="isDerivedHighlighted(derivedKey)">
+                <div>
+                  <strong>{{ derivedLabel(derivedKey) }}</strong>
+                  <small>Current value</small>
                 </div>
-                <app-sheet-rank-pips
-                  [value]="skillRank(skill.key)"
-                  [maximum]="5"
-                  [label]="skill.label"
-                  (valueChange)="actions().setSkillRank(skill.key, $event)" />
-                <div class="skill-matrix-modifier">
-                  <span class="stat-label">Modifier</span>
-                  <strong>{{ computedStats().skillModifiers[skill.key] }}</strong>
-                </div>
+                <span class="sheet-readout-value">{{ displayDerivedValue(computedStats().derived[derivedKey]) }}</span>
               </article>
             }
           </div>
@@ -177,18 +117,18 @@ import { SheetRankPipsComponent } from './sheet-rank-pips.component';
           <section class="sheet-advanced-block">
             <p class="eyebrow">Defenses</p>
             <div class="sheet-advanced-list">
-              @for (defense of defenses(); track defense.key) {
+              @for (cluster of clusters; track cluster.key) {
                 <article class="sheet-advanced-row">
                   <div>
-                    <strong>{{ defense.label }}</strong>
-                    <small>Current bonus {{ stats().defenseBonuses[defense.key] ?? 0 }}</small>
+                    <strong>{{ cluster.label }} Defense</strong>
+                    <small>Current bonus {{ stats().defenseBonuses[cluster.defenseKey] ?? 0 }}</small>
                   </div>
                   <app-sheet-number-stepper
                     [compact]="true"
-                    [value]="stats().defenseBonuses[defense.key] ?? 0"
-                    [decrementLabel]="'Lower ' + defense.label + ' bonus'"
-                    [incrementLabel]="'Raise ' + defense.label + ' bonus'"
-                    (valueChange)="actions().stepDefenseBonus(defense.key, $event - (stats().defenseBonuses[defense.key] ?? 0))" />
+                    [value]="stats().defenseBonuses[cluster.defenseKey] ?? 0"
+                    [decrementLabel]="'Lower ' + cluster.label + ' defense bonus'"
+                    [incrementLabel]="'Raise ' + cluster.label + ' defense bonus'"
+                    (valueChange)="actions().stepDefenseBonus(cluster.defenseKey, $event - (stats().defenseBonuses[cluster.defenseKey] ?? 0))" />
                 </article>
               }
             </div>
@@ -218,19 +158,18 @@ export class EnemyStatBlockEditorComponent {
   readonly stats = input.required<CharacterStatSheet>();
   readonly computedStats = input.required<ComputedCharacterStatSheet>();
   readonly actions = input.required<CharacterStatSheetEditorActions>();
+  readonly highlightedTokens = input<ReadonlySet<StatHighlightToken>>(new Set<StatHighlightToken>());
 
-  readonly attributes = ATTRIBUTE_METADATA;
   readonly resourceKeys = CHARACTER_RESOURCE_KEYS;
-  readonly displayedSkills = LEAN_ENEMY_SKILLS;
+  readonly clusters = ENEMY_STAT_CLUSTERS;
   readonly advancedDerivedKeys = ENEMY_ADVANCED_DERIVED_KEYS;
-  readonly defenses = computed(() => defenseRows(this.computedStats()));
+  readonly visibleDerivedKeys = ENEMY_VISIBLE_DERIVED_KEYS;
   readonly deflectValue = computed(() => {
     const value = this.computedStats().derived.deflect;
     return typeof value === 'number' ? value : 0;
   });
 
   protected readonly resourceLabel = resourceLabel;
-  protected readonly attributeLabel = attributeLabel;
   protected readonly derivedLabel = derivedLabel;
   protected readonly derivedOverrideValue = derivedOverrideValue;
   protected readonly displayDerivedValue = displayDerivedValue;
@@ -239,11 +178,7 @@ export class EnemyStatBlockEditorComponent {
     return (event.target as HTMLInputElement).value;
   }
 
-  attributeMeta(facet: string): string {
-    return `${facet} attribute`;
-  }
-
-  skillRank(key: string): number {
-    return this.stats().skillRanks[key] || 0;
+  isDerivedHighlighted(key: CharacterDerivedKey): boolean {
+    return this.highlightedTokens().has(derivedHighlightToken(key));
   }
 }

@@ -47,6 +47,9 @@ describe('SessionService campaign roster preset actions', () => {
           stats: createEmptyCharacterStatSheet(),
           maxHealth: 24,
           maxFocus: 4,
+          features: ['Shield Wall', 'Veteran discipline'],
+          tactics: 'Advance with the frontline, then hold ground once engaged.',
+          sourceAdversaryName: 'Hallway Guard',
           presetActions: [
             {
               id: 'guard-debilitate',
@@ -59,6 +62,8 @@ describe('SessionService campaign roster preset actions', () => {
               supportsDamage: true,
               defaultModifier: 5,
               defaultDamageFormula: '2d8 + 5',
+              rangeText: 'reach 5 ft.',
+              description: 'Attack +5, reach 5 ft., one target. Graze ... Hit ...',
             },
             {
               id: 'guard-stand-fast',
@@ -81,7 +86,12 @@ describe('SessionService campaign roster preset actions', () => {
     expect(template?.presetActions).toHaveLength(2);
     expect(template?.presetActions[0]?.name).toBe('Debilitate');
     expect(template?.presetActions[0]?.defaultModifier).toBe(5);
+    expect(template?.presetActions[0]?.rangeText).toBe('reach 5 ft.');
+    expect(template?.presetActions[0]?.description).toContain('Attack +5');
     expect(template?.presetActions[1]?.kind).toBe('reaction');
+    expect(template?.features).toEqual(['Shield Wall', 'Veteran discipline']);
+    expect(template?.tactics).toContain('Advance with the frontline');
+    expect(template?.sourceAdversaryName).toBe('Hallway Guard');
   });
 
   it('migrates legacy embedded roster entries into stat sheets without losing resource maxima', async () => {

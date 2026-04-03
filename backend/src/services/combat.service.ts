@@ -129,6 +129,8 @@ function normalizePresetAction(action: CombatPresetAction): CombatPresetAction {
     supportsDamage: Boolean(action.supportsDamage),
     defaultModifier: action.defaultModifier ?? undefined,
     defaultDamageFormula: action.defaultDamageFormula?.trim() || undefined,
+    rangeText: action.rangeText?.trim() || undefined,
+    description: action.description?.trim() || undefined,
   };
 }
 

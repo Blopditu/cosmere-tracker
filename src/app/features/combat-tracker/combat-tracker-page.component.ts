@@ -106,6 +106,7 @@ function buildCatalogChoice(item: ActionCatalogItem): ResolutionActionChoice {
 }
 
 function buildPresetChoice(action: CombatPresetAction): ResolutionActionChoice {
+  const helperTextParts = [action.rangeText?.trim(), action.description?.trim()].filter(Boolean);
   return {
     id: `${PRESET_CHOICE_PREFIX}${action.id}`,
     label: action.name,
@@ -119,6 +120,7 @@ function buildPresetChoice(action: CombatPresetAction): ResolutionActionChoice {
     defaultFocusCost: action.focusCost,
     defaultModifier: action.defaultModifier,
     defaultDamageFormula: action.defaultDamageFormula,
+    helperText: helperTextParts.length ? helperTextParts.join(' \u2022 ') : undefined,
     tags: [],
     source: 'preset',
   };

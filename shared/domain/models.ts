@@ -39,6 +39,7 @@ export interface PartyMember {
   name: string;
   side: ParticipantSide;
   role?: string;
+  level?: number;
   stats: CharacterStatSheet;
   maxHealth?: number;
   maxFocus?: number;
@@ -58,6 +59,9 @@ export interface ParticipantTemplate {
   maxInvestiture?: number;
   notes?: string;
   imagePath?: string;
+  features: string[];
+  tactics?: string;
+  sourceAdversaryName?: string;
   presetActions: CombatPresetAction[];
 }
 
@@ -117,6 +121,8 @@ export interface CombatPresetAction {
   supportsDamage: boolean;
   defaultModifier?: number;
   defaultDamageFormula?: string;
+  rangeText?: string;
+  description?: string;
 }
 
 export interface CombatParticipantState {

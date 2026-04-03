@@ -1,13 +1,14 @@
 import { CommonModule } from '@angular/common';
 import { ChangeDetectionStrategy, Component, input, output } from '@angular/core';
 import { ActionKind, CombatPresetAction } from '@shared/domain';
+import { createId } from '../core/default-data';
 import { RosharIconComponent } from './roshar-icon.component';
 
 const ACTION_KIND_OPTIONS: ActionKind[] = ['action', 'reaction', 'free'];
 
 function createPresetAction(kind: ActionKind): CombatPresetAction {
   return {
-    id: crypto.randomUUID(),
+    id: createId('preset-action'),
     name: '',
     kind,
     actionCost: kind === 'action' ? 1 : 0,
@@ -85,6 +86,16 @@ function createPresetAction(kind: ActionKind): CombatPresetAction {
                 <span>Damage formula</span>
                 <input type="text" [value]="action.defaultDamageFormula ?? ''" (input)="updateOptionalText(action.id, 'defaultDamageFormula', asOptionalText($event))" placeholder="2d8 + 5" />
               </label>
+
+              <label class="compact-field preset-action-grid-span">
+                <span>Range text</span>
+                <input type="text" [value]="action.rangeText ?? ''" (input)="updateOptionalText(action.id, 'rangeText', asOptionalText($event))" placeholder="Range 150/600 ft. or reach 5 ft." />
+              </label>
+
+              <label class="compact-field preset-action-grid-description">
+                <span>Description</span>
+                <textarea rows="3" [value]="action.description ?? ''" (input)="updateOptionalText(action.id, 'description', asOptionalText($event))" placeholder="Attack +5, range 150/600 ft., one target. Graze ... Hit ..."></textarea>
+              </label>
             </div>
 
             <div class="preset-action-flag-row">
@@ -142,7 +153,11 @@ export class CombatPresetActionEditorComponent {
     this.actionsChange.emit(this.actions().map((action) => (action.id === actionId ? { ...action, [field]: value } : action)));
   }
 
-  updateOptionalText(actionId: string, field: 'defaultDamageFormula', value: string | undefined): void {
+  updateOptionalText(
+    actionId: string,
+    field: 'defaultDamageFormula' | 'rangeText' | 'description',
+    value: string | undefined,
+  ): void {
     this.actionsChange.emit(
       this.actions().map((action) => (action.id === actionId ? { ...action, [field]: value } : action)),
     );

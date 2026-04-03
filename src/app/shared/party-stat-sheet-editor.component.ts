@@ -7,130 +7,42 @@ import {
   ComputedCharacterStatSheet,
 } from '@shared/domain';
 import {
-  ATTRIBUTE_METADATA,
   CharacterStatSheetEditorActions,
+  derivedHighlightToken,
   EXPERTISE_CATEGORIES,
   PARTY_ADVANCED_DERIVED_KEYS,
-  PARTY_SKILL_GROUPS,
-  attributeAbbreviation,
-  attributeLabel,
-  defenseRows,
+  PARTY_STAT_CLUSTERS,
   derivedLabel,
   derivedOverrideValue,
   displayDerivedValue,
+  StatHighlightToken,
   resourceLabel,
 } from './character-stat-sheet-editor.helpers';
+import { ResourceBarComponent } from './resource-bar.component';
 import { SheetNumberStepperComponent } from './sheet-number-stepper.component';
-import { SheetRankPipsComponent } from './sheet-rank-pips.component';
+import { StatClusterComponent } from './stat-cluster.component';
 
 @Component({
   selector: 'app-party-stat-sheet-editor',
-  imports: [CommonModule, SheetNumberStepperComponent, SheetRankPipsComponent],
+  imports: [CommonModule, ResourceBarComponent, SheetNumberStepperComponent, StatClusterComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <section class="party-sheet">
-      <section class="sheet-summary-band party-sheet-summary">
-        @for (resourceKey of resourceKeys; track resourceKey) {
-          <article class="sheet-summary-metric" [class.resource-investiture]="resourceKey === 'investiture'">
-            <span class="stat-label">{{ resourceLabel(resourceKey) }}</span>
-            <strong>{{ computedStats().resources[resourceKey] }}</strong>
-          </article>
+      <app-resource-bar [resources]="computedStats().resources" [highlightedTokens]="highlightedTokens()" />
+
+      <div class="stat-cluster-grid">
+        @for (cluster of clusters; track cluster.key) {
+          <app-stat-cluster
+            [cluster]="cluster"
+            [stats]="stats()"
+            [computedStats]="computedStats()"
+            [actions]="actions()"
+            [highlightedTokens]="highlightedTokens()" />
         }
-        @for (defense of defenses(); track defense.key) {
-          <article class="sheet-summary-metric defense-metric">
-            <span class="stat-label">{{ defense.label }}</span>
-            <strong>{{ defense.value }}</strong>
-          </article>
-        }
-      </section>
+      </div>
 
-      <div class="party-sheet-grid">
-        <section id="party-sheet-attributes" class="sheet-block sheet-block--attributes">
-          <div class="sheet-block-header">
-            <h4>Attributes</h4>
-          </div>
-          <div class="party-attribute-grid">
-            @for (attribute of attributes; track attribute.key) {
-              <article class="sheet-stat-card">
-                <div class="sheet-stat-copy">
-                  <strong>{{ attribute.label }}</strong>
-                  <small>{{ attributeMeta(attribute.facet) }}</small>
-                </div>
-                <app-sheet-number-stepper
-                  [compact]="true"
-                  [value]="stats().attributeScores[attribute.key]"
-                  [minimum]="0"
-                  [decrementLabel]="'Lower ' + attribute.label"
-                  [incrementLabel]="'Raise ' + attribute.label"
-                  (valueChange)="actions().stepAttribute(attribute.key, $event - stats().attributeScores[attribute.key])" />
-              </article>
-            }
-          </div>
-        </section>
-
-        <section id="party-sheet-resources" class="sheet-block sheet-block--resources">
-          <div class="sheet-block-header">
-            <h4>Resources</h4>
-          </div>
-          <div class="sheet-readout-list">
-            @for (resourceKey of resourceKeys; track resourceKey) {
-                <article class="sheet-readout-row">
-                  <div>
-                    <strong>{{ resourceLabel(resourceKey) }}</strong>
-                    <small>Maximum</small>
-                  </div>
-                  <span class="sheet-readout-value">{{ computedStats().resources[resourceKey] }}</span>
-                </article>
-              }
-          </div>
-          <div class="sheet-readout-list">
-            @for (defense of defenses(); track defense.key) {
-                <article class="sheet-readout-row">
-                  <div>
-                    <strong>{{ defense.label }}</strong>
-                    <small>Defense</small>
-                  </div>
-                  <span class="sheet-readout-value">{{ defense.value }}</span>
-                </article>
-              }
-          </div>
-        </section>
-
-        <section id="party-sheet-skills" class="sheet-block sheet-block--skills">
-          <div class="sheet-block-header">
-            <h4>Skills</h4>
-          </div>
-          <div class="party-skill-groups">
-            @for (group of skillGroups; track group.facet) {
-              <section class="skill-group" [class.physical]="group.facet === 'physical'" [class.cognitive]="group.facet === 'cognitive'" [class.spiritual]="group.facet === 'spiritual'">
-                <div class="skill-group-header">
-                  <h5>{{ group.label }}</h5>
-                </div>
-                <div class="skill-group-list">
-                  @for (skill of group.skills; track skill.key) {
-                    <article class="skill-matrix-row">
-                      <div class="skill-matrix-copy">
-                        <strong>{{ skill.label }}</strong>
-                        <small [attr.title]="attributeLabel(skill.attributeKey)">{{ attributeAbbreviation(skill.attributeKey) }}</small>
-                      </div>
-                      <app-sheet-rank-pips
-                        class="skill-matrix-pips"
-                        [value]="skillRank(skill.key)"
-                        [maximum]="5"
-                        [label]="skill.label"
-                        (valueChange)="actions().setSkillRank(skill.key, $event)" />
-                      <div class="skill-matrix-modifier" [attr.title]="modifierTitle(skill.key)">
-                        <strong>{{ modifierDisplay(skill.key) }}</strong>
-                      </div>
-                    </article>
-                  }
-                </div>
-              </section>
-            }
-          </div>
-        </section>
-
-        <section id="party-sheet-derived" class="sheet-block sheet-block--derived">
+      <div class="sheet-utility-grid">
+        <section class="sheet-utility-block">
           <div class="sheet-block-header">
             <h4>Derived</h4>
           </div>
@@ -148,7 +60,7 @@ import { SheetRankPipsComponent } from './sheet-rank-pips.component';
                 (valueChange)="actions().stepDerivedNumber('deflect', $event - deflectValue())" />
             </article>
             @for (derivedKey of nonDeflectDerivedKeys; track derivedKey) {
-              <article class="sheet-derived-row">
+              <article class="sheet-derived-row" [class.is-highlighted]="isDerivedHighlighted(derivedKey)">
                 <div>
                   <strong>{{ derivedLabel(derivedKey) }}</strong>
                   <small>Current value</small>
@@ -159,7 +71,7 @@ import { SheetRankPipsComponent } from './sheet-rank-pips.component';
           </div>
         </section>
 
-        <section id="party-sheet-expertises" class="sheet-block sheet-block--expertises">
+        <section class="sheet-utility-block">
           <div class="sheet-block-header">
             <h4>Expertises</h4>
             <button type="button" class="button-outline micro-button" (click)="actions().addExpertise()">Add expertise</button>
@@ -241,18 +153,18 @@ import { SheetRankPipsComponent } from './sheet-rank-pips.component';
           <section class="sheet-advanced-block">
             <p class="eyebrow">Defenses</p>
             <div class="sheet-advanced-list">
-              @for (defense of defenses(); track defense.key) {
+              @for (cluster of clusters; track cluster.key) {
                 <article class="sheet-advanced-row">
                   <div>
-                    <strong>{{ defense.label }}</strong>
-                    <small>Current bonus {{ stats().defenseBonuses[defense.key] ?? 0 }}</small>
+                    <strong>{{ cluster.label }} Defense</strong>
+                    <small>Current bonus {{ stats().defenseBonuses[cluster.defenseKey] ?? 0 }}</small>
                   </div>
                   <app-sheet-number-stepper
                     [compact]="true"
-                    [value]="stats().defenseBonuses[defense.key] ?? 0"
-                    [decrementLabel]="'Lower ' + defense.label + ' bonus'"
-                    [incrementLabel]="'Raise ' + defense.label + ' bonus'"
-                    (valueChange)="actions().stepDefenseBonus(defense.key, $event - (stats().defenseBonuses[defense.key] ?? 0))" />
+                    [value]="stats().defenseBonuses[cluster.defenseKey] ?? 0"
+                    [decrementLabel]="'Lower ' + cluster.label + ' defense bonus'"
+                    [incrementLabel]="'Raise ' + cluster.label + ' defense bonus'"
+                    (valueChange)="actions().stepDefenseBonus(cluster.defenseKey, $event - (stats().defenseBonuses[cluster.defenseKey] ?? 0))" />
                 </article>
               }
             </div>
@@ -282,22 +194,19 @@ export class PartyStatSheetEditorComponent {
   readonly stats = input.required<CharacterStatSheet>();
   readonly computedStats = input.required<ComputedCharacterStatSheet>();
   readonly actions = input.required<CharacterStatSheetEditorActions>();
+  readonly highlightedTokens = input<ReadonlySet<StatHighlightToken>>(new Set<StatHighlightToken>());
 
-  readonly attributes = ATTRIBUTE_METADATA;
   readonly resourceKeys = CHARACTER_RESOURCE_KEYS;
   readonly expertiseCategories = EXPERTISE_CATEGORIES;
-  readonly skillGroups = PARTY_SKILL_GROUPS;
+  readonly clusters = PARTY_STAT_CLUSTERS;
   readonly nonDeflectDerivedKeys = PARTY_ADVANCED_DERIVED_KEYS;
   readonly advancedDerivedKeys = PARTY_ADVANCED_DERIVED_KEYS;
-  readonly defenses = computed(() => defenseRows(this.computedStats()));
   readonly deflectValue = computed(() => {
     const value = this.computedStats().derived.deflect;
     return typeof value === 'number' ? value : 0;
   });
 
   protected readonly resourceLabel = resourceLabel;
-  protected readonly attributeLabel = attributeLabel;
-  protected readonly attributeAbbreviation = attributeAbbreviation;
   protected readonly derivedLabel = derivedLabel;
   protected readonly derivedOverrideValue = derivedOverrideValue;
   protected readonly displayDerivedValue = displayDerivedValue;
@@ -306,20 +215,7 @@ export class PartyStatSheetEditorComponent {
     return (event.target as HTMLInputElement).value;
   }
 
-  attributeMeta(facet: string): string {
-    return `${facet} attribute`;
-  }
-
-  modifierDisplay(skillKey: string): string {
-    const value = this.computedStats().skillModifiers[skillKey];
-    return value >= 0 ? `+${value}` : `${value}`;
-  }
-
-  modifierTitle(skillKey: string): string {
-    return `${this.computedStats().skillModifiers[skillKey]} total modifier`;
-  }
-
-  skillRank(key: string): number {
-    return this.stats().skillRanks[key] || 0;
+  isDerivedHighlighted(key: CharacterDerivedKey): boolean {
+    return this.highlightedTokens().has(derivedHighlightToken(key));
   }
 }
