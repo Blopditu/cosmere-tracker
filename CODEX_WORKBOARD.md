@@ -148,8 +148,9 @@ This file is the running tracker for work done with Codex. Keep it current so fu
   Active files: `shared/domain/models.ts`, `backend/src/services/session.service.ts`, `backend/src/services/combat.service.ts`, `backend/src/services/session.service.spec.ts`, `backend/src/services/combat.service.spec.ts`, `src/app/shared/combat-preset-action-editor.component.ts`, `src/app/shared/enemy-stat-block-editor.component.ts`, `src/app/shared/enemy-supplement-editor.component.ts`, `src/app/features/session/campaign-roster-page.component.ts`, `src/app/features/session/session-dashboard-page.component.ts`, `src/app/features/session/stonewalkers-adversaries.data.ts`, `src/app/features/combat-tracker/combat-tracker-page.component.ts`, `src/app/features/combat-tracker/combat-resolution-board.component.ts`, `src/styles.scss`.
   Decision: use a checked-in curated Stonewalkers adversary bundle and a campaign-roster-only import action that appends draft enemy templates directly into `enemyDraft`; duplicates are intentionally appended, not merged or skipped.
   Verification update: `npx ngc -p tsconfig.app.json` passed, `npm run test:backend` passed (12 tests), `npm run build:backend` passed after adding enemy `features`, `tactics`, `sourceAdversaryName`, richer preset action prose/range text, the shared enemy supplement editor, and the checked-in Stonewalkers adversary draft bundle.
-  Remaining: manual browser verification for the campaign-roster `Import Stonewalkers` flow, enemy supplement editing on both roster surfaces, copied preset-action editing in combat setup, preset hover copy in the live logger, and any follow-up cleanup for noisy OCR-derived adversary prose in the curated bundle.
-  Next step: browser-pass the Stonewalkers import/edit/combat hover loop, then move to `Player-safe reveal and notes improvements`.
+  Manual verification update: campaign-roster Stonewalkers import, enemy supplement editing, and combat hover behavior were browser-checked and the enemies are ready for use.
+  Remaining: optional cleanup for noisy OCR-derived adversary prose in the curated bundle and any follow-up UX polish after more table use.
+  Next step: move to `Player-safe reveal and notes improvements`, unless the player-roster persistence bug is prioritized first.
 
 - `[~]` Chapter 3 curated import and stat-sheet foundation
   Notes:
@@ -168,13 +169,24 @@ This file is the running tracker for work done with Codex. Keep it current so fu
   Completed subtask: `Add player Level field to roster character sheets and persistence`.
   Next step: do the browser pass, then either polish the cluster editor density further or return to the remaining combat UX cleanup.
 
+- `[~]` SQLite migration slice 1: sessions and campaign roster
+  Notes:
+  Move `sessions`, `party_members`, and `participant_templates` off whole-file JSON and onto SQLite JSON-row tables without changing API contracts.
+  Files: `backend/src/lib/sqlite.ts`, `backend/src/lib/json-store.ts`, `backend/src/repositories/session.repository.ts`, `backend/src/repositories/party-member.repository.ts`, `backend/src/repositories/participant-template.repository.ts`, `backend/src/services/session.service.spec.ts`.
+  Completed: switched the three repositories to SQLite-backed async storage, added one-time lazy backfill from legacy JSON files, reused the existing `cosmere-tracker.sqlite` database path, and added a service-level backfill test proving SQLite remains the source of truth after initial import.
+  Verification: `npm run test:backend` passed (13 tests), `npm run build:backend` passed, `npx ngc -p tsconfig.app.json` passed.
+  Remaining: manual runtime smoke check with existing `backend/data/*.json` content, then decide whether Slice 2 should be stage runtime or whether the roster/session save semantics need tightening before more migration work.
+  Next step: browser- and runtime-check existing local data against the SQLite-backed session/roster repositories, then move to the next migration slice.
+
 - `[>]` Player-safe reveal and notes improvements
   Notes:
   Support table-safe reveals, handoff notes, and controlled display content.
 
-- `[>]` SQLite migration planning for current JSON-backed domains
+- `[x]` SQLite migration planning for current JSON-backed domains
   Notes:
   Define migration order for sessions, stages, combats, rolls, and related core data.
+  Completed: documented the phased SQLite migration strategy in `docs/sqlite-migration-plan.md`, using the existing `SqliteJsonRepository` pattern as the low-risk bridge away from whole-file JSON repositories.
+  Next step: implement Slice 1 from the plan: move `sessions`, `party_members`, and `participant_templates` to SQLite with one-time JSON backfill and unchanged service/controller contracts.
 
 ## Deferred Later
 

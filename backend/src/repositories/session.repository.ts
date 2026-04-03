@@ -1,9 +1,14 @@
 import path from 'node:path';
 import { SessionEntity } from '@shared/domain';
-import { JsonCollectionRepository } from '../lib/json-store';
+import { AsyncSqliteJsonRepository } from '../lib/sqlite';
 
-export class SessionRepository extends JsonCollectionRepository<SessionEntity> {
+export class SessionRepository extends AsyncSqliteJsonRepository<SessionEntity> {
   constructor(dataDir: string) {
-    super(path.join(dataDir, 'sessions.json'), []);
+    super(
+      path.join(dataDir, 'cosmere-tracker.sqlite'),
+      'sessions',
+      path.join(dataDir, 'sessions.json'),
+      [],
+    );
   }
 }

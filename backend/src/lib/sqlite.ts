@@ -1,14 +1,22 @@
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, promises as fs } from 'node:fs';
 import path from 'node:path';
 import Database from 'better-sqlite3';
 
 export type SqliteDatabase = Database.Database;
+const SQLITE_CONNECTIONS = new Map<string, SqliteDatabase>();
 
 export function openSqliteDatabase(filePath: string): SqliteDatabase {
-  mkdirSync(path.dirname(filePath), { recursive: true });
-  const database = new Database(filePath);
+  const normalizedPath = path.resolve(filePath);
+  const existing = SQLITE_CONNECTIONS.get(normalizedPath);
+  if (existing) {
+    return existing;
+  }
+
+  mkdirSync(path.dirname(normalizedPath), { recursive: true });
+  const database = new Database(normalizedPath);
   database.pragma('journal_mode = WAL');
   database.pragma('foreign_keys = ON');
+  SQLITE_CONNECTIONS.set(normalizedPath, database);
   return database;
 }
 
@@ -76,5 +84,81 @@ export class SqliteJsonRepository<T extends { id: string }> {
 
   remove(id: string): void {
     this.deleteStatement.run(id);
+  }
+}
+
+async function readLegacyItems<T>(filePath: string, fallback: T[]): Promise<T[]> {
+  try {
+    const raw = await fs.readFile(filePath, 'utf8');
+    const parsed = JSON.parse(raw) as T[];
+    return Array.isArray(parsed) ? parsed : fallback;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+      return fallback;
+    }
+    throw error;
+  }
+}
+
+export class AsyncSqliteJsonRepository<T extends { id: string }> {
+  private readonly repository: SqliteJsonRepository<T>;
+  private initialization: Promise<void> | null = null;
+
+  constructor(
+    databasePath: string,
+    tableName: string,
+    private readonly legacyFilePath?: string,
+    private readonly seed: T[] = [],
+  ) {
+    this.repository = new SqliteJsonRepository<T>(openSqliteDatabase(databasePath), tableName);
+  }
+
+  async list(): Promise<T[]> {
+    await this.ensureInitialized();
+    return this.repository.list();
+  }
+
+  async get(id: string): Promise<T | undefined> {
+    await this.ensureInitialized();
+    return this.repository.get(id);
+  }
+
+  async saveAll(items: T[]): Promise<void> {
+    await this.ensureInitialized();
+    this.repository.saveAll(items);
+  }
+
+  async upsert(item: T): Promise<T> {
+    await this.ensureInitialized();
+    return this.repository.upsert(item);
+  }
+
+  async remove(id: string): Promise<void> {
+    await this.ensureInitialized();
+    this.repository.remove(id);
+  }
+
+  private async ensureInitialized(): Promise<void> {
+    if (this.initialization) {
+      return this.initialization;
+    }
+
+    this.initialization = (async () => {
+      if (this.repository.count() > 0) {
+        return;
+      }
+      if (!this.legacyFilePath) {
+        if (this.seed.length > 0) {
+          this.repository.saveAll(this.seed);
+        }
+        return;
+      }
+      const legacyItems = await readLegacyItems(this.legacyFilePath, this.seed);
+      if (legacyItems.length > 0) {
+        this.repository.saveAll(legacyItems);
+      }
+    })();
+
+    return this.initialization;
   }
 }

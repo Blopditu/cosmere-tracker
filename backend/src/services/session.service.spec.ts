@@ -1,5 +1,5 @@
 import { createEmptyCharacterStatSheet } from '@shared/domain';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -136,5 +136,82 @@ describe('SessionService campaign roster preset actions', () => {
     expect(legacyEnemy?.stats.resourceOverrides.focus).toBe(3);
     expect(legacyEnemy?.stats.resourceOverrides.investiture).toBe(1);
     expect(legacyEnemy?.maxInvestiture).toBe(1);
+  });
+
+  it('backfills sessions and campaign roster from legacy JSON once, then keeps SQLite as source of truth', async () => {
+    const timestamp = '2026-04-03T10:00:00.000Z';
+    await writeFile(
+      path.join(dataDir, 'sessions.json'),
+      JSON.stringify(
+        [
+          {
+            id: 'legacy-session',
+            title: 'Legacy Session',
+            notes: '',
+            createdAt: timestamp,
+            updatedAt: timestamp,
+            playerIds: ['legacy-player'],
+          },
+        ],
+        null,
+        2,
+      ),
+      'utf8',
+    );
+    await writeFile(
+      path.join(dataDir, 'party-members.json'),
+      JSON.stringify(
+        [
+          {
+            id: 'legacy-player',
+            name: 'Rockefeller',
+            side: 'pc',
+            stats: createEmptyCharacterStatSheet(),
+            maxHealth: 12,
+            maxFocus: 3,
+          },
+        ],
+        null,
+        2,
+      ),
+      'utf8',
+    );
+    await writeFile(
+      path.join(dataDir, 'participant-templates.json'),
+      JSON.stringify(
+        [
+          {
+            id: 'legacy-enemy',
+            name: 'Legacy Archer',
+            side: 'enemy',
+            stats: createEmptyCharacterStatSheet(),
+            presetActions: [],
+            features: [],
+          },
+        ],
+        null,
+        2,
+      ),
+      'utf8',
+    );
+
+    const firstRoster = await sessionService.campaignRoster();
+    const firstDashboard = await sessionService.dashboard('legacy-session');
+
+    expect(firstRoster.partyMembers.map((member) => member.name)).toEqual(['Rockefeller']);
+    expect(firstRoster.participantTemplates.map((template) => template.name)).toEqual(['Legacy Archer']);
+    expect(firstDashboard.campaignPartyMembers.map((member) => member.name)).toEqual(['Rockefeller']);
+    expect(firstDashboard.session.partyMembers.map((member) => member.name)).toEqual(['Rockefeller']);
+
+    await writeFile(path.join(dataDir, 'party-members.json'), JSON.stringify([], null, 2), 'utf8');
+    await writeFile(path.join(dataDir, 'participant-templates.json'), JSON.stringify([], null, 2), 'utf8');
+    await writeFile(path.join(dataDir, 'sessions.json'), JSON.stringify([], null, 2), 'utf8');
+
+    const secondRoster = await sessionService.campaignRoster();
+    const secondDashboard = await sessionService.dashboard('legacy-session');
+
+    expect(secondRoster.partyMembers.map((member) => member.name)).toEqual(['Rockefeller']);
+    expect(secondRoster.participantTemplates.map((template) => template.name)).toEqual(['Legacy Archer']);
+    expect(secondDashboard.session.partyMembers.map((member) => member.name)).toEqual(['Rockefeller']);
   });
 });

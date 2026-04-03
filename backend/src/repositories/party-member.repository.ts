@@ -1,9 +1,14 @@
 import path from 'node:path';
 import { PartyMember } from '@shared/domain';
-import { JsonCollectionRepository } from '../lib/json-store';
+import { AsyncSqliteJsonRepository } from '../lib/sqlite';
 
-export class PartyMemberRepository extends JsonCollectionRepository<PartyMember> {
+export class PartyMemberRepository extends AsyncSqliteJsonRepository<PartyMember> {
   constructor(dataDir: string) {
-    super(path.join(dataDir, 'party-members.json'), []);
+    super(
+      path.join(dataDir, 'cosmere-tracker.sqlite'),
+      'party_members',
+      path.join(dataDir, 'party-members.json'),
+      [],
+    );
   }
 }

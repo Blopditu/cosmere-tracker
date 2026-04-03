@@ -1,9 +1,14 @@
 import path from 'node:path';
 import { ParticipantTemplate } from '@shared/domain';
-import { JsonCollectionRepository } from '../lib/json-store';
+import { AsyncSqliteJsonRepository } from '../lib/sqlite';
 
-export class ParticipantTemplateRepository extends JsonCollectionRepository<ParticipantTemplate> {
+export class ParticipantTemplateRepository extends AsyncSqliteJsonRepository<ParticipantTemplate> {
   constructor(dataDir: string) {
-    super(path.join(dataDir, 'participant-templates.json'), []);
+    super(
+      path.join(dataDir, 'cosmere-tracker.sqlite'),
+      'participant_templates',
+      path.join(dataDir, 'participant-templates.json'),
+      [],
+    );
   }
 }

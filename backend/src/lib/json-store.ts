@@ -1,5 +1,8 @@
+import { randomUUID } from 'node:crypto';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
+
+const TEMP_FILE_EXTENSION = '.tmp';
 
 async function ensureParentDir(filePath: string): Promise<void> {
   await fs.mkdir(path.dirname(filePath), { recursive: true });
@@ -20,7 +23,7 @@ export async function readJsonFile<T>(filePath: string, fallback: T): Promise<T>
 
 export async function writeJsonFile<T>(filePath: string, value: T): Promise<void> {
   await ensureParentDir(filePath);
-  const tempPath = `${filePath}.tmp`;
+  const tempPath = `${filePath}.${randomUUID()}${TEMP_FILE_EXTENSION}`;
   await fs.writeFile(tempPath, JSON.stringify(value, null, 2), 'utf8');
   await fs.rename(tempPath, filePath);
 }
