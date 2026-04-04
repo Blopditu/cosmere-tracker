@@ -48,7 +48,7 @@ import { AppRuntimeService } from './app-runtime.service';
         <div class="topbar-actions shell-control-strip">
           <label class="compact-field" data-tour="session-switcher">
             <span>Active session</span>
-            <select [ngModel]="currentSessionId()" (ngModelChange)="goToSession($event)">
+            <select [ngModel]="selectedSessionId()" (ngModelChange)="goToSession($event)">
               <option value="">Choose session</option>
               @for (session of store.sessions(); track session.id) {
                 <option [value]="session.id">{{ session.title }}</option>
@@ -122,18 +122,19 @@ export class ShellLayoutComponent {
   private readonly activatedRoute = inject(ActivatedRoute);
   private readonly destroyRef = inject(DestroyRef);
   readonly currentSessionId = signal('');
+  readonly selectedSessionId = computed(() => this.currentSessionId() || this.store.activeSessionId());
 
   readonly sessionRoute = computed(() =>
-    this.currentSessionId() ? ['/sessions', this.currentSessionId()] : ['/sessions'],
+    this.selectedSessionId() ? ['/sessions', this.selectedSessionId()] : ['/sessions'],
   );
   readonly rollRoute = computed(() =>
-    this.currentSessionId() ? ['/sessions', this.currentSessionId(), 'rolls'] : ['/sessions'],
+    this.selectedSessionId() ? ['/sessions', this.selectedSessionId(), 'rolls'] : ['/sessions'],
   );
   readonly combatRoute = computed(() =>
-    this.currentSessionId() ? ['/sessions', this.currentSessionId(), 'combats'] : ['/sessions'],
+    this.selectedSessionId() ? ['/sessions', this.selectedSessionId(), 'combats'] : ['/sessions'],
   );
   readonly stageRoute = computed(() =>
-    this.currentSessionId() ? ['/gm/stage-manager', this.currentSessionId()] : ['/sessions'],
+    this.selectedSessionId() ? ['/gm/stage-manager', this.selectedSessionId()] : ['/sessions'],
   );
   readonly warRoomRoute = ['/gm/campaigns', 'stonewalkers-campaign'];
 
@@ -146,6 +147,7 @@ export class ShellLayoutComponent {
       const sessionId = snapshot.paramMap.get('sessionId') ?? '';
       this.currentSessionId.set(sessionId);
       if (sessionId) {
+        this.store.setActiveSession(sessionId);
         void this.store.refreshLiveScene(sessionId);
       } else {
         this.runtime.resetLiveScene(null, null);
@@ -162,9 +164,23 @@ export class ShellLayoutComponent {
 
   goToSession(sessionId: string): void {
     if (!sessionId) {
+      this.store.setActiveSession('');
       void this.router.navigate(['/sessions']);
       return;
     }
+    this.store.setActiveSession(sessionId);
+
+    const currentUrl = this.router.url;
+    const stayOnPage =
+      currentUrl.startsWith('/gm/campaigns/')
+      || currentUrl.startsWith('/campaign/roster')
+      || currentUrl.startsWith('/gm/import/review');
+
+    if (stayOnPage) {
+      void this.store.refreshLiveScene(sessionId);
+      return;
+    }
+
     void this.router.navigate(['/sessions', sessionId]);
   }
 

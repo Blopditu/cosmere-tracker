@@ -11,6 +11,7 @@ import { PostCombatStatsPageComponent } from './features/post-combat-stats/post-
 import { StageManagerPageComponent } from './features/stage-manager/stage-manager-page.component';
 import { PlayerDisplayPageComponent } from './features/stage-manager/player-display-page.component';
 import { CampaignConsolePageComponent } from './features/campaign-console/campaign-console-page.component';
+import { CampaignScenePageComponent } from './features/campaign-console/campaign-scene-page.component';
 import { CampaignImportPageComponent } from './features/campaign-import/campaign-import-page.component';
 
 export const routes: Routes = [
@@ -66,6 +67,10 @@ export const routes: Routes = [
       {
         path: 'gm/campaigns/:campaignId',
         component: CampaignConsolePageComponent,
+      },
+      {
+        path: 'gm/campaigns/:campaignId/scenes/:sceneId',
+        component: CampaignScenePageComponent,
       },
       {
         path: 'gm/import/review',

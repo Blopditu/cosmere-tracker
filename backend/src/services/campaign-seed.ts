@@ -20,6 +20,7 @@ import {
   Obstacle,
   Outcome,
   PC,
+  PCGoal,
   ResolutionHook,
   ResourceDefinition,
   Reward,
@@ -52,6 +53,7 @@ export interface CampaignSeedData {
   npcs: NPC[];
   npcAppearances: NPCAppearance[];
   pcs: PC[];
+  pcGoals: PCGoal[];
   locations: Location[];
   rules: RuleReference[];
   resourceDefinitions: ResourceDefinition[];
@@ -146,6 +148,11 @@ export function buildCampaignSeed(): CampaignSeedData {
       title: 'Scout Lines',
       sceneKind: 'investigation',
       board: { x: 0, y: 0, lane: 'search' },
+      planning: {
+        classification: 'optional',
+        readiness: 'ready',
+        focus: 'Establish the clue-search rhythm and hand the table one clean route toward the contact.',
+      },
       content: layered(
         {
           summaryBlocks: [textBlock('scene-scout-lines-summary-1', 'summary', 'Search the fringe scout tents for patrol rhythm and hand-off routes.')],
@@ -171,6 +178,7 @@ export function buildCampaignSeed(): CampaignSeedData {
       linkedNpcAppearanceIds: ['appearance-lanor-scout-lines'],
       linkedAdversaryTemplateIds: [],
       linkedLocationIds: ['location-warcamp'],
+      linkedGoalIds: ['goal-serah-contact', 'goal-renn-proof'],
       linkedRuleReferenceIds: ['rule-conversation-focus'],
       outcomeIds: ['outcome-scout-pattern'],
       tags: ['search', 'intel'],
@@ -184,6 +192,11 @@ export function buildCampaignSeed(): CampaignSeedData {
       title: 'Quartermaster Stores',
       sceneKind: 'investigation',
       board: { x: 1, y: 0, lane: 'search' },
+      planning: {
+        classification: 'optional',
+        readiness: 'ready',
+        focus: 'Offer the cleanest logistics clue and a practical favor the players can spend later.',
+      },
       content: layered(
         {
           summaryBlocks: [textBlock('scene-quartermaster-summary-1', 'summary', 'Search the stores for forged requisition marks and borrowed access.')],
@@ -209,6 +222,7 @@ export function buildCampaignSeed(): CampaignSeedData {
       linkedNpcAppearanceIds: ['appearance-lanor-quartermaster'],
       linkedAdversaryTemplateIds: [],
       linkedLocationIds: ['location-warcamp'],
+      linkedGoalIds: ['goal-renn-proof'],
       linkedRuleReferenceIds: ['rule-conversation-focus'],
       outcomeIds: ['outcome-quartermaster-pass'],
       tags: ['search', 'favor'],
@@ -222,6 +236,11 @@ export function buildCampaignSeed(): CampaignSeedData {
       title: 'Field Infirmary',
       sceneKind: 'social',
       board: { x: 2, y: 0, lane: 'search' },
+      planning: {
+        classification: 'optional',
+        readiness: 'ready',
+        focus: 'Slow the tempo and give the players an empathy-driven way to learn what the monastery is hiding.',
+      },
       content: layered(
         {
           summaryBlocks: [textBlock('scene-infirmary-summary-1', 'summary', 'Search the infirmary for rumors, wounded witnesses, and monastery casualty reports.')],
@@ -247,6 +266,7 @@ export function buildCampaignSeed(): CampaignSeedData {
       linkedNpcAppearanceIds: ['appearance-tava-infirmary'],
       linkedAdversaryTemplateIds: [],
       linkedLocationIds: ['location-warcamp'],
+      linkedGoalIds: ['goal-serah-contact'],
       linkedRuleReferenceIds: ['rule-conversation-focus'],
       outcomeIds: ['outcome-infirmary-rumor'],
       tags: ['search', 'active'],
@@ -260,6 +280,11 @@ export function buildCampaignSeed(): CampaignSeedData {
       title: 'Rival Campfire',
       sceneKind: 'social',
       board: { x: 3, y: 0, lane: 'search' },
+      planning: {
+        classification: 'hub',
+        readiness: 'draft',
+        focus: 'Use this as the loose hub inside the warcamp where gossip, trust, and suspicion can all shift quickly.',
+      },
       content: layered(
         {
           summaryBlocks: [textBlock('scene-campfire-summary-1', 'summary', 'Trade stories with rival scouts who hate the quartermaster more than they hate strangers.')],
@@ -275,6 +300,7 @@ export function buildCampaignSeed(): CampaignSeedData {
       linkedNpcAppearanceIds: ['appearance-amaram-shadow'],
       linkedAdversaryTemplateIds: [],
       linkedLocationIds: ['location-warcamp'],
+      linkedGoalIds: ['goal-renn-proof'],
       linkedRuleReferenceIds: ['rule-conversation-focus'],
       outcomeIds: ['outcome-campfire-trust'],
       tags: ['search', 'trust'],
@@ -288,6 +314,11 @@ export function buildCampaignSeed(): CampaignSeedData {
       title: 'Later Contact',
       sceneKind: 'social',
       board: { x: 1, y: 1, lane: 'convergence' },
+      planning: {
+        classification: 'critical',
+        readiness: 'ready',
+        focus: 'Cash in the clue hunt and pivot from broad searching into a committed next move.',
+      },
       content: layered(
         {
           summaryBlocks: [textBlock('scene-contact-summary-1', 'summary', 'Meet the contact once the party has enough fragments to ask the right question.')],
@@ -320,6 +351,7 @@ export function buildCampaignSeed(): CampaignSeedData {
       linkedNpcAppearanceIds: ['appearance-lanor-contact', 'appearance-amaram-shadow'],
       linkedAdversaryTemplateIds: [],
       linkedLocationIds: ['location-warcamp'],
+      linkedGoalIds: ['goal-serah-contact', 'goal-renn-proof'],
       linkedRuleReferenceIds: ['rule-conversation-focus'],
       outcomeIds: ['outcome-contact-trust'],
       tags: ['convergence'],
@@ -333,6 +365,11 @@ export function buildCampaignSeed(): CampaignSeedData {
       title: 'Monastery Infiltration',
       sceneKind: 'endeavor',
       board: { x: 2, y: 2, lane: 'endeavor' },
+      planning: {
+        classification: 'hub',
+        readiness: 'ready',
+        focus: 'Run the chapter’s open middle as one pressure-driven scene cluster instead of fragmenting it into tiny beats.',
+      },
       content: layered(
         {
           summaryBlocks: [textBlock('scene-monastery-summary-1', 'summary', 'Infiltrate the monastery using the calm route, the shadow route, or a risky improvisation.')],
@@ -359,6 +396,7 @@ export function buildCampaignSeed(): CampaignSeedData {
       linkedNpcAppearanceIds: ['appearance-tava-monastery'],
       linkedAdversaryTemplateIds: [],
       linkedLocationIds: ['location-monastery'],
+      linkedGoalIds: ['goal-renn-proof', 'goal-serah-acolyte'],
       linkedRuleReferenceIds: ['rule-stealth-infiltration'],
       outcomeIds: ['outcome-monastery-map', 'outcome-monastery-alarm'],
       tags: ['endeavor'],
@@ -372,6 +410,11 @@ export function buildCampaignSeed(): CampaignSeedData {
       title: 'Escape And Report',
       sceneKind: 'transition',
       board: { x: 3, y: 3, lane: 'exit' },
+      planning: {
+        classification: 'critical',
+        readiness: 'ready',
+        focus: 'Resolve fallout fast and make the players choose what truth survives into the next chapter.',
+      },
       content: layered(
         {
           summaryBlocks: [textBlock('scene-escape-summary-1', 'summary', 'Resolve the getaway, account for noise or injuries, and let the players choose what to do with the truth.')],
@@ -395,6 +438,7 @@ export function buildCampaignSeed(): CampaignSeedData {
       linkedNpcAppearanceIds: ['appearance-lanor-contact'],
       linkedAdversaryTemplateIds: [],
       linkedLocationIds: ['location-warcamp', 'location-monastery'],
+      linkedGoalIds: ['goal-serah-acolyte', 'goal-renn-proof'],
       linkedRuleReferenceIds: ['rule-fast-turn'],
       outcomeIds: ['outcome-escape-clean'],
       tags: ['convergence'],
@@ -1307,6 +1351,52 @@ export function buildCampaignSeed(): CampaignSeedData {
     },
   ];
 
+  const pcGoals: PCGoal[] = [
+    {
+      ...baseRecord('goal-serah-contact'),
+      campaignId,
+      pcId: 'pc-serah',
+      ownerLabel: 'Serah',
+      title: 'Find the hidden acolyte',
+      description: 'Serah is looking for the human cost behind the monastery rumors, not just the proof on paper.',
+      progressState: 'advancing',
+      progressNotes: ['The infirmary and contact scenes should both feel like progress toward this goal.'],
+      triggerSceneIds: ['scene-field-infirmary', 'scene-contact-meeting', 'scene-monastery-infiltration'],
+      triggerNpcIds: ['npc-tava', 'npc-lanor'],
+    },
+    {
+      ...baseRecord('goal-renn-proof'),
+      campaignId,
+      pcId: 'pc-renn',
+      ownerLabel: 'Renn',
+      title: 'Bring back undeniable proof',
+      description: 'Renn wants hard evidence that survives political spin once the party leaves the warcamp.',
+      progressState: 'active',
+      progressNotes: ['The quartermaster seal, contact trust, and monastery ledger all ladder into this arc.'],
+      triggerSceneIds: [
+        'scene-scout-lines',
+        'scene-quartermaster-stores',
+        'scene-rival-campfire',
+        'scene-contact-meeting',
+        'scene-monastery-infiltration',
+        'scene-escape-report',
+      ],
+      triggerNpcIds: ['npc-lanor'],
+    },
+    {
+      ...baseRecord('goal-serah-acolyte'),
+      campaignId,
+      pcId: 'pc-serah',
+      ownerLabel: 'Serah',
+      title: 'Get someone out alive',
+      description: 'If the monastery really is swallowing people, Serah wants one clean rescue instead of another quiet report.',
+      progressState: 'active',
+      progressNotes: ['Keep this visible in the infiltration and exit beats so the chapter does not become all logistics.'],
+      triggerSceneIds: ['scene-monastery-infiltration', 'scene-escape-report'],
+      triggerNpcIds: ['npc-tava'],
+    },
+  ];
+
   const locations: Location[] = [
     {
       ...baseRecord('location-warcamp'),
@@ -1566,6 +1656,7 @@ export function buildCampaignSeed(): CampaignSeedData {
     npcs,
     npcAppearances,
     pcs,
+    pcGoals,
     locations,
     rules,
     resourceDefinitions,

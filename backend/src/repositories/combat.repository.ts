@@ -1,9 +1,14 @@
 import path from 'node:path';
 import { CombatRecord } from '@shared/domain';
-import { JsonCollectionRepository } from '../lib/json-store';
+import { AsyncSqliteJsonRepository } from '../lib/sqlite';
 
-export class CombatRepository extends JsonCollectionRepository<CombatRecord> {
+export class CombatRepository extends AsyncSqliteJsonRepository<CombatRecord> {
   constructor(dataDir: string) {
-    super(path.join(dataDir, 'combats.json'), []);
+    super(
+      path.join(dataDir, 'cosmere-tracker.sqlite'),
+      'combats',
+      path.join(dataDir, 'combats.json'),
+      [],
+    );
   }
 }

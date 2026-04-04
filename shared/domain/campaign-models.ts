@@ -20,6 +20,9 @@ export type DeepPartial<T> = {
 export type SourceKind = 'stormlight-handbook' | 'stonewalkers-adventure' | 'stonewalkers-gm-tools';
 export type RuleMode = 'assistive' | 'strict';
 export type SceneNodeStatus = 'locked' | 'available' | 'active' | 'completed' | 'skipped';
+export type FlowNodeClassification = 'critical' | 'optional' | 'hub';
+export type FlowNodeReadiness = 'rough' | 'draft' | 'ready';
+export type GoalProgressState = 'active' | 'advancing' | 'blocked' | 'resolved';
 export type HookMode = 'active' | 'passive';
 export type EndeavorKind = 'pursuit' | 'infiltration' | 'exploration' | 'mission' | 'discovery';
 export type EncounterStatus = 'planned' | 'active' | 'paused' | 'finished';
@@ -298,6 +301,11 @@ export interface SceneNode extends BaseRecord {
   title: string;
   sceneKind: 'social' | 'investigation' | 'combat' | 'endeavor' | 'transition';
   board: { x: number; y: number; lane?: string };
+  planning?: Partial<{
+    classification: FlowNodeClassification;
+    readiness: FlowNodeReadiness;
+    focus: string;
+  }>;
   content: Layered<SceneContent>;
   passiveHookIds: ID[];
   activeHookIds: ID[];
@@ -307,6 +315,7 @@ export interface SceneNode extends BaseRecord {
   linkedNpcAppearanceIds: ID[];
   linkedAdversaryTemplateIds: ID[];
   linkedLocationIds: ID[];
+  linkedGoalIds?: ID[];
   linkedRuleReferenceIds: ID[];
   outcomeIds: ID[];
   tags: string[];
@@ -323,6 +332,7 @@ export interface SceneState extends BaseRecord {
   skippedAt?: ISODateTime;
   localNotes: string[];
   chosenOutcomeIds: ID[];
+  linkedStageSceneId?: ID;
   runtimeFlags: Record<string, boolean>;
   custom: Record<string, JsonValue>;
 }
@@ -480,6 +490,18 @@ export interface PC extends BaseRecord {
   conditionIds: ID[];
   campaignNotes: TextBlock[];
   historyEventIds: ID[];
+}
+
+export interface PCGoal extends BaseRecord {
+  campaignId: ID;
+  pcId?: ID;
+  ownerLabel: string;
+  title: string;
+  description: string;
+  progressState: GoalProgressState;
+  progressNotes: string[];
+  triggerSceneIds: ID[];
+  triggerNpcIds: ID[];
 }
 
 export interface Faction extends BaseRecord {
@@ -983,6 +1005,12 @@ export interface CampaignAnalyticsSummary {
 }
 
 export interface ResolvedSceneNode extends SceneNode {
+  linkedGoalIds: ID[];
+  resolvedPlanning: {
+    classification: FlowNodeClassification;
+    readiness: FlowNodeReadiness;
+    focus: string;
+  };
   resolvedContent: SceneContent;
   gmDiff: {
     changedBlocks: number;
@@ -1032,7 +1060,10 @@ export interface CampaignConsoleData {
   activeChapterId: ID;
   board: ResolvedChapterBoard;
   sceneIndex: Record<ID, ResolvedSceneNode>;
+  npcs: NPC[];
+  npcAppearances: NPCAppearance[];
   npcCards: ResolvedNPCCard[];
+  pcGoals: PCGoal[];
   locations: Location[];
   rules: RuleReference[];
   conditions: Condition[];
@@ -1059,6 +1090,123 @@ export interface CampaignConsoleData {
 export interface SceneStateMutationInput {
   sceneNodeId: ID;
   status: Extract<SceneNodeStatus, 'available' | 'active' | 'completed' | 'skipped'>;
+}
+
+export interface SceneOutcomeSelectionInput {
+  sceneNodeId: ID;
+  outcomeId: ID;
+  selected: boolean;
+}
+
+export interface SceneStageLinkInput {
+  sceneNodeId: ID;
+  stageSceneId: ID | null;
+}
+
+export interface SceneNpcAppearanceInput {
+  appearanceId?: ID;
+  npcId: ID;
+  aliasInScene?: string;
+  stance?: NPCAppearance['stance'];
+  localGoal?: string;
+  localSecrets: string[];
+  portrayalOverride: string[];
+  notes: string[];
+}
+
+export interface SceneNodeUpsertInput {
+  sceneNodeId?: ID;
+  title: string;
+  key: string;
+  sceneKind: SceneNode['sceneKind'];
+  board: SceneNode['board'];
+  classification: FlowNodeClassification;
+  readiness: FlowNodeReadiness;
+  focus: string;
+  summary: string;
+  gmNote: string;
+  hiddenTruth: string;
+  note: string;
+  tags: string[];
+  isDefaultStartScene: boolean;
+  isRequiredBeat: boolean;
+  linkedLocationIds: ID[];
+  linkedGoalIds: ID[];
+  npcAppearances: SceneNpcAppearanceInput[];
+}
+
+export interface SceneNodeDeletePreview {
+  sceneNodeId: ID;
+  sceneTitle: string;
+  connectedEdgeCount: number;
+  sceneStateCount: number;
+  hookCount: number;
+  outcomeCount: number;
+  endeavorCount: number;
+  obstacleCount: number;
+  endeavorRunCount: number;
+  encounterCount: number;
+  npcAppearanceCount: number;
+}
+
+export interface SceneNodeDeleteInput {
+  sceneNodeId: ID;
+}
+
+export interface SceneEdgeCreateInput {
+  fromSceneId: ID;
+  toSceneId: ID;
+  kind: SceneEdge['kind'];
+  label?: string;
+  priority?: number;
+}
+
+export interface SceneEdgeDeleteInput {
+  edgeId: ID;
+}
+
+export interface NpcUpsertInput {
+  npcId?: ID;
+  canonicalName: string;
+  key: string;
+  aliases: string[];
+  canonicalSummary: string;
+  privateTruth: string;
+  portrayalDefaults: string;
+  statusTags: string[];
+}
+
+export interface NpcDeleteInput {
+  npcId: ID;
+}
+
+export interface LocationUpsertInput {
+  locationId?: ID;
+  name: string;
+  key: string;
+  kind: Location['kind'];
+  publicSummary: string;
+  gmTruth: string;
+  tags: string[];
+}
+
+export interface LocationDeleteInput {
+  locationId: ID;
+}
+
+export interface GoalUpsertInput {
+  goalId?: ID;
+  ownerLabel: string;
+  title: string;
+  description: string;
+  progressState: GoalProgressState;
+  progressNotes: string[];
+  triggerSceneIds: ID[];
+  triggerNpcIds: ID[];
+}
+
+export interface GoalDeleteInput {
+  goalId: ID;
 }
 
 export interface QuickNoteInput {

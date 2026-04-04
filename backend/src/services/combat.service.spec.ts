@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -266,5 +266,49 @@ describe('CombatService phase rules', () => {
     expect(updatedActor?.currentInvestiture).toBe(2);
     expect(updatedCombat.investitureEvents).toHaveLength(1);
     expect(updatedCombat.investitureEvents[0]?.reason).toBe('Manual surge spend');
+  });
+
+  it('backfills combats from legacy JSON once, then keeps SQLite as source of truth', async () => {
+    const timestamp = '2026-04-04T12:00:00.000Z';
+    await writeFile(
+      path.join(dataDir, 'combats.json'),
+      JSON.stringify(
+        [
+          {
+            id: 'legacy-combat',
+            sessionId: SESSION_ID,
+            title: 'Legacy Combat',
+            status: 'planned',
+            createdAt: timestamp,
+            participantIds: [],
+            currentRoundNumber: 0,
+            roundIds: [],
+            participants: [],
+            rounds: [],
+            turns: [],
+            actionEvents: [],
+            damageEvents: [],
+            focusEvents: [],
+            investitureEvents: [],
+            healthEvents: [],
+            conditionEvents: [],
+          },
+        ],
+        null,
+        2,
+      ),
+      'utf8',
+    );
+
+    const initialCombats = await combatService.listBySession(SESSION_ID);
+    expect(initialCombats.map((combat) => combat.title)).toContain('Legacy Combat');
+
+    await writeFile(path.join(dataDir, 'combats.json'), JSON.stringify([], null, 2), 'utf8');
+
+    const persistedCombats = await combatService.listBySession(SESSION_ID);
+    expect(persistedCombats.map((combat) => combat.title)).toContain('Legacy Combat');
+
+    const persistedCombat = await combatService.get('legacy-combat');
+    expect(persistedCombat.title).toBe('Legacy Combat');
   });
 });

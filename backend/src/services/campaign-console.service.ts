@@ -10,6 +10,7 @@ import {
   Condition,
   ConditionMutationInput,
   CreateSimulationInput,
+  DeepPartial,
   DiceRoll,
   DiceRollInput,
   EndeavorApproachResolutionInput,
@@ -19,13 +20,21 @@ import {
   EventLogEntry,
   Favor,
   FavorAdjustmentInput,
+  GoalDeleteInput,
+  GoalUpsertInput,
   Hook,
+  Layered,
   Location,
+  LocationDeleteInput,
+  LocationUpsertInput,
   NPC,
   NPCAppearance,
+  NpcDeleteInput,
+  NpcUpsertInput,
   Obstacle,
   Outcome,
   PC,
+  PCGoal,
   QuickNoteInput,
   ResourceDefinition,
   ResourceAdjustmentInput,
@@ -33,15 +42,24 @@ import {
   RuleEvaluationRequest,
   RuleEvaluationResult,
   RuleReference,
+  SceneEdgeCreateInput,
+  SceneEdgeDeleteInput,
+  SceneOutcomeSelectionInput,
   SkillDefinition,
   SceneNode,
+  SceneNodeDeleteInput,
+  SceneNodeDeletePreview,
+  SceneNodeUpsertInput,
+  SceneNpcAppearanceInput,
   SceneState,
+  SceneStageLinkInput,
   SceneStateMutationInput,
   SessionRun,
   SimulationDefinition,
   SimulationResult,
   StatisticDefinition,
   StatisticTableDefinition,
+  TextBlock,
   buildCampaignConsoleData,
   evaluateStateExpression,
 } from '@shared/domain';
@@ -69,6 +87,7 @@ interface CampaignConsoleRepositories {
   npcs: SqliteJsonRepository<NPC>;
   npcAppearances: SqliteJsonRepository<NPCAppearance>;
   pcs: SqliteJsonRepository<PC>;
+  pcGoals: SqliteJsonRepository<PCGoal>;
   locations: SqliteJsonRepository<Location>;
   rules: SqliteJsonRepository<RuleReference>;
   resourceDefinitions: SqliteJsonRepository<ResourceDefinition>;
@@ -96,6 +115,7 @@ interface CampaignContext {
   npcs: NPC[];
   npcAppearances: NPCAppearance[];
   pcs: PC[];
+  pcGoals: PCGoal[];
   locations: Location[];
   rules: RuleReference[];
   resourceDefinitions: ResourceDefinition[];
@@ -178,6 +198,7 @@ export class CampaignConsoleService {
       sceneStates: context.sceneStates,
       npcs: context.npcs,
       npcAppearances: context.npcAppearances,
+      pcGoals: context.pcGoals,
       locations: context.locations,
       rules: context.rules,
       conditions: context.conditions,
@@ -341,6 +362,595 @@ export class CampaignConsoleService {
       now,
     );
 
+    return this.getConsole(campaignId);
+  }
+
+  async selectSceneOutcome(campaignId: string, input: SceneOutcomeSelectionInput): Promise<CampaignConsoleData> {
+    this.ensureSeedData();
+    const context = this.loadContext(campaignId);
+    const sceneNode = context.sceneNodes.find((scene) => scene.id === input.sceneNodeId);
+    if (!sceneNode) {
+      throw new HttpError(404, 'Scene not found.');
+    }
+
+    const outcome = context.outcomes.find((entry) => entry.id === input.outcomeId);
+    if (!outcome || outcome.sceneNodeId !== sceneNode.id) {
+      throw new HttpError(404, 'Outcome not found for scene.');
+    }
+
+    const sceneState = this.getOrCreateSceneState(context, sceneNode.id);
+    const chosenOutcomeIds = new Set(sceneState.chosenOutcomeIds);
+    if (input.selected) {
+      chosenOutcomeIds.add(outcome.id);
+    } else {
+      chosenOutcomeIds.delete(outcome.id);
+    }
+
+    sceneState.chosenOutcomeIds = [...chosenOutcomeIds];
+    sceneState.updatedAt = nowIso();
+    sceneState.revision += 1;
+    this.repositories.sceneStates.upsert(sceneState);
+
+    return this.getConsole(campaignId);
+  }
+
+  async linkSceneStage(campaignId: string, input: SceneStageLinkInput): Promise<CampaignConsoleData> {
+    this.ensureSeedData();
+    const context = this.loadContext(campaignId);
+    const sceneNode = context.sceneNodes.find((scene) => scene.id === input.sceneNodeId);
+    if (!sceneNode) {
+      throw new HttpError(404, 'Scene not found.');
+    }
+
+    const sceneState = this.getOrCreateSceneState(context, sceneNode.id);
+    sceneState.linkedStageSceneId = input.stageSceneId?.trim() || undefined;
+    sceneState.updatedAt = nowIso();
+    sceneState.revision += 1;
+    this.repositories.sceneStates.upsert(sceneState);
+
+    return this.getConsole(campaignId);
+  }
+
+  async previewSceneDelete(campaignId: string, sceneNodeId: string): Promise<SceneNodeDeletePreview> {
+    this.ensureSeedData();
+    const context = this.loadContext(campaignId);
+    const sceneNode = context.sceneNodes.find((scene) => scene.id === sceneNodeId);
+    if (!sceneNode) {
+      throw new HttpError(404, 'Scene not found.');
+    }
+
+    return this.buildSceneDeletePreview(context, sceneNode);
+  }
+
+  async upsertSceneNode(campaignId: string, input: SceneNodeUpsertInput): Promise<CampaignConsoleData> {
+    this.ensureSeedData();
+    const context = this.loadContext(campaignId);
+    const timestamp = nowIso();
+    const trimmedTitle = input.title.trim();
+    const trimmedKey = input.key.trim();
+    if (!trimmedTitle) {
+      throw new HttpError(400, 'Scene title is required.');
+    }
+    if (!trimmedKey) {
+      throw new HttpError(400, 'Scene key is required.');
+    }
+
+    const existingScene =
+      (input.sceneNodeId ? context.sceneNodes.find((scene) => scene.id === input.sceneNodeId) : undefined) ?? null;
+    const duplicateKey = context.sceneNodes.find((scene) => scene.key === trimmedKey && scene.id !== existingScene?.id);
+    if (duplicateKey) {
+      throw new HttpError(409, 'Scene key already exists in this chapter.');
+    }
+
+    const sceneNode: SceneNode =
+      existingScene ??
+      ({
+        id: randomUUID(),
+        createdAt: timestamp,
+        updatedAt: timestamp,
+        revision: 1,
+        campaignId: context.campaign.id,
+        chapterId: context.chapter.id,
+        key: trimmedKey,
+        title: trimmedTitle,
+        sceneKind: input.sceneKind,
+        board: { x: 0, y: 0 },
+        planning: {},
+        content: {},
+        passiveHookIds: [],
+        activeHookIds: [],
+        unlockWhen: [],
+        linkedNpcAppearanceIds: [],
+        linkedAdversaryTemplateIds: [],
+        linkedLocationIds: [],
+        linkedGoalIds: [],
+        linkedRuleReferenceIds: [],
+        outcomeIds: [],
+        tags: [],
+        sourceRefs: [],
+      } satisfies SceneNode);
+
+    sceneNode.key = trimmedKey;
+    sceneNode.title = trimmedTitle;
+    sceneNode.sceneKind = input.sceneKind;
+    sceneNode.board = {
+      x: Number.isFinite(input.board.x) ? input.board.x : 0,
+      y: Number.isFinite(input.board.y) ? input.board.y : 0,
+      lane: input.board.lane?.trim() || undefined,
+    };
+    sceneNode.planning = {
+      classification: input.classification,
+      readiness: input.readiness,
+      focus: input.focus.trim(),
+    };
+    sceneNode.content = this.mergeLayeredContent(sceneNode.content, {
+      summaryBlocks: this.makeTextBlocks('summary', [input.summary.trim()]),
+      gmBlocks: this.makeTextBlocks('gm', [input.gmNote.trim()]),
+      hiddenTruthBlocks: this.makeTextBlocks('truth', [input.hiddenTruth.trim()]),
+      noteBlocks: this.makeTextBlocks('note', [input.note.trim()]),
+    }, timestamp);
+    sceneNode.tags = this.normalizeStringList(input.tags);
+    sceneNode.linkedLocationIds = this.filterExistingIds(
+      this.normalizeStringList(input.linkedLocationIds),
+      context.locations.map((location) => location.id),
+    );
+    sceneNode.linkedGoalIds = this.filterExistingIds(
+      this.normalizeStringList(input.linkedGoalIds),
+      context.pcGoals.map((goal) => goal.id),
+    );
+    sceneNode.updatedAt = timestamp;
+    sceneNode.revision = existingScene ? existingScene.revision + 1 : 1;
+
+    this.syncSceneNpcAppearances(context, sceneNode, input.npcAppearances, timestamp);
+    this.repositories.sceneNodes.upsert(sceneNode);
+
+    const chapterSceneIds = context.chapter.sceneNodeIds.includes(sceneNode.id)
+      ? context.chapter.sceneNodeIds
+      : [...context.chapter.sceneNodeIds, sceneNode.id];
+    const nextDefaultStartSceneId = input.isDefaultStartScene
+      ? sceneNode.id
+      : context.chapter.defaultStartSceneId === sceneNode.id
+        ? undefined
+        : context.chapter.defaultStartSceneId;
+    const nextRequiredBeatSceneIds = input.isRequiredBeat
+      ? uniquePush([...context.chapter.requiredBeatSceneIds], sceneNode.id)
+      : removeValue(context.chapter.requiredBeatSceneIds, sceneNode.id);
+
+    this.repositories.chapters.upsert({
+      ...context.chapter,
+      sceneNodeIds: chapterSceneIds,
+      defaultStartSceneId: nextDefaultStartSceneId,
+      requiredBeatSceneIds: nextRequiredBeatSceneIds,
+      updatedAt: timestamp,
+      revision: context.chapter.revision + 1,
+    });
+
+    if (!existingScene) {
+      context.sceneNodes.push(sceneNode);
+      this.getOrCreateSceneState(context, sceneNode.id);
+      this.refreshUnlocks(context, timestamp);
+    }
+
+    return this.getConsole(campaignId);
+  }
+
+  async deleteSceneNode(campaignId: string, input: SceneNodeDeleteInput): Promise<CampaignConsoleData> {
+    this.ensureSeedData();
+    const context = this.loadContext(campaignId);
+    const sceneNode = context.sceneNodes.find((scene) => scene.id === input.sceneNodeId);
+    if (!sceneNode) {
+      throw new HttpError(404, 'Scene not found.');
+    }
+
+    const timestamp = nowIso();
+    const preview = this.buildSceneDeletePreview(context, sceneNode);
+    const endeavorIds = context.endeavors.filter((endeavor) => endeavor.sceneNodeId === sceneNode.id).map((endeavor) => endeavor.id);
+
+    for (const edge of this.repositories.sceneEdges.list().filter((entry) => entry.fromSceneId === sceneNode.id || entry.toSceneId === sceneNode.id)) {
+      this.repositories.sceneEdges.remove(edge.id);
+    }
+    for (const state of this.repositories.sceneStates.list().filter((entry) => entry.sceneNodeId === sceneNode.id)) {
+      this.repositories.sceneStates.remove(state.id);
+    }
+    for (const hook of this.repositories.hooks.list().filter((entry) => entry.sceneNodeId === sceneNode.id)) {
+      this.repositories.hooks.remove(hook.id);
+    }
+    for (const outcome of this.repositories.outcomes.list().filter((entry) => entry.sceneNodeId === sceneNode.id)) {
+      this.repositories.outcomes.remove(outcome.id);
+    }
+    for (const obstacle of this.repositories.obstacles.list().filter((entry) => endeavorIds.includes(entry.endeavorId))) {
+      this.repositories.obstacles.remove(obstacle.id);
+    }
+    for (const run of this.repositories.endeavorRuns.list().filter((entry) => endeavorIds.includes(entry.endeavorId))) {
+      this.repositories.endeavorRuns.remove(run.id);
+    }
+    for (const endeavor of this.repositories.endeavors.list().filter((entry) => entry.sceneNodeId === sceneNode.id)) {
+      this.repositories.endeavors.remove(endeavor.id);
+    }
+    for (const encounter of this.repositories.encounters.list().filter((entry) => entry.sceneNodeId === sceneNode.id)) {
+      this.repositories.encounters.remove(encounter.id);
+    }
+    for (const appearance of this.repositories.npcAppearances.list().filter((entry) => entry.sceneNodeId === sceneNode.id)) {
+      this.repositories.npcAppearances.remove(appearance.id);
+    }
+    this.repositories.sceneNodes.remove(sceneNode.id);
+
+    const nextSceneIds = removeValue(context.chapter.sceneNodeIds, sceneNode.id);
+    const nextDefaultStartSceneId =
+      context.chapter.defaultStartSceneId === sceneNode.id
+        ? context.chapter.requiredBeatSceneIds.find((id) => id !== sceneNode.id && nextSceneIds.includes(id)) ??
+          nextSceneIds[0]
+        : context.chapter.defaultStartSceneId;
+    this.repositories.chapters.upsert({
+      ...context.chapter,
+      sceneNodeIds: nextSceneIds,
+      defaultStartSceneId: nextDefaultStartSceneId,
+      requiredBeatSceneIds: removeValue(context.chapter.requiredBeatSceneIds, sceneNode.id),
+      updatedAt: timestamp,
+      revision: context.chapter.revision + 1,
+    });
+
+    for (const chapterState of this.repositories.chapterStates.list().filter((entry) => entry.chapterId === context.chapter.id)) {
+      this.repositories.chapterStates.upsert({
+        ...chapterState,
+        activeSceneId: chapterState.activeSceneId === sceneNode.id ? undefined : chapterState.activeSceneId,
+        unlockedSceneIds: removeValue(chapterState.unlockedSceneIds, sceneNode.id),
+        completedSceneIds: removeValue(chapterState.completedSceneIds, sceneNode.id),
+        skippedSceneIds: removeValue(chapterState.skippedSceneIds, sceneNode.id),
+        updatedAt: timestamp,
+        revision: chapterState.revision + 1,
+      });
+    }
+    for (const sessionRun of this.repositories.sessionRuns.list().filter((entry) => entry.activeSceneId === sceneNode.id)) {
+      this.repositories.sessionRuns.upsert({
+        ...sessionRun,
+        activeSceneId: undefined,
+        updatedAt: timestamp,
+        revision: sessionRun.revision + 1,
+      });
+    }
+    for (const goal of this.repositories.pcGoals.list().filter((entry) => entry.triggerSceneIds.includes(sceneNode.id))) {
+      this.repositories.pcGoals.upsert({
+        ...goal,
+        triggerSceneIds: removeValue(goal.triggerSceneIds, sceneNode.id),
+        updatedAt: timestamp,
+        revision: goal.revision + 1,
+      });
+    }
+
+    this.appendEvent(
+      context,
+      {
+        kind: 'note.captured',
+        sceneNodeId: context.chapterState.activeSceneId,
+        payload: {
+          deletedSceneNodeId: sceneNode.id,
+          deletedSceneTitle: sceneNode.title,
+          cascade: {
+            connectedEdgeCount: preview.connectedEdgeCount,
+            sceneStateCount: preview.sceneStateCount,
+            hookCount: preview.hookCount,
+            outcomeCount: preview.outcomeCount,
+            endeavorCount: preview.endeavorCount,
+            obstacleCount: preview.obstacleCount,
+            endeavorRunCount: preview.endeavorRunCount,
+            encounterCount: preview.encounterCount,
+            npcAppearanceCount: preview.npcAppearanceCount,
+          },
+        },
+      },
+      timestamp,
+    );
+
+    return this.getConsole(campaignId);
+  }
+
+  async createSceneEdge(campaignId: string, input: SceneEdgeCreateInput): Promise<CampaignConsoleData> {
+    this.ensureSeedData();
+    const context = this.loadContext(campaignId);
+    const fromScene = context.sceneNodes.find((scene) => scene.id === input.fromSceneId);
+    const toScene = context.sceneNodes.find((scene) => scene.id === input.toSceneId);
+    if (!fromScene || !toScene) {
+      throw new HttpError(404, 'Scene not found for edge.');
+    }
+
+    const duplicate = this.repositories.sceneEdges
+      .list()
+      .find((edge) => edge.fromSceneId === input.fromSceneId && edge.toSceneId === input.toSceneId && edge.kind === input.kind);
+    if (duplicate) {
+      throw new HttpError(409, 'That edge already exists.');
+    }
+
+    const timestamp = nowIso();
+    const priorities = this.repositories.sceneEdges
+      .list()
+      .filter((edge) => edge.chapterId === context.chapter.id)
+      .map((edge) => edge.priority);
+    this.repositories.sceneEdges.upsert({
+      id: randomUUID(),
+      createdAt: timestamp,
+      updatedAt: timestamp,
+      revision: 1,
+      chapterId: context.chapter.id,
+      fromSceneId: input.fromSceneId,
+      toSceneId: input.toSceneId,
+      kind: input.kind,
+      label: input.label?.trim() || undefined,
+      priority: input.priority ?? (priorities.length ? Math.max(...priorities) + 1 : 1),
+    });
+    return this.getConsole(campaignId);
+  }
+
+  async deleteSceneEdge(campaignId: string, input: SceneEdgeDeleteInput): Promise<CampaignConsoleData> {
+    this.ensureSeedData();
+    if (!this.repositories.sceneEdges.get(input.edgeId)) {
+      throw new HttpError(404, 'Edge not found.');
+    }
+    this.repositories.sceneEdges.remove(input.edgeId);
+    return this.getConsole(campaignId);
+  }
+
+  async upsertNpc(campaignId: string, input: NpcUpsertInput): Promise<CampaignConsoleData> {
+    this.ensureSeedData();
+    const context = this.loadContext(campaignId);
+    const timestamp = nowIso();
+    const trimmedName = input.canonicalName.trim();
+    const trimmedKey = input.key.trim();
+    if (!trimmedName) {
+      throw new HttpError(400, 'NPC name is required.');
+    }
+    if (!trimmedKey) {
+      throw new HttpError(400, 'NPC key is required.');
+    }
+
+    const existingNpc = (input.npcId ? context.npcs.find((npc) => npc.id === input.npcId) : undefined) ?? null;
+    const duplicateKey = context.npcs.find((npc) => npc.key === trimmedKey && npc.id !== existingNpc?.id);
+    if (duplicateKey) {
+      throw new HttpError(409, 'NPC key already exists in this campaign.');
+    }
+
+    const npc: NPC =
+      existingNpc ??
+      ({
+        id: randomUUID(),
+        createdAt: timestamp,
+        updatedAt: timestamp,
+        revision: 1,
+        campaignId: context.campaign.id,
+        key: trimmedKey,
+        canonicalName: trimmedName,
+        aliases: [],
+        factionIds: [],
+        content: {},
+        campaignState: {
+          statusTags: [],
+          resources: {},
+          relationshipByPcId: {},
+          historyEventIds: [],
+        },
+      } satisfies NPC);
+
+    npc.key = trimmedKey;
+    npc.canonicalName = trimmedName;
+    npc.aliases = this.normalizeStringList(input.aliases);
+    npc.content = this.mergeLayeredContent(npc.content, {
+      canonicalSummary: this.makeTextBlocks('summary', [input.canonicalSummary.trim()]),
+      privateTruth: this.makeTextBlocks('truth', [input.privateTruth.trim()]),
+      portrayalDefaults: this.makeTextBlocks('gm', [input.portrayalDefaults.trim()]),
+    }, timestamp);
+    npc.campaignState = {
+      ...npc.campaignState,
+      statusTags: this.normalizeStringList(input.statusTags),
+    };
+    npc.updatedAt = timestamp;
+    npc.revision = existingNpc ? existingNpc.revision + 1 : 1;
+    this.repositories.npcs.upsert(npc);
+
+    if (!context.campaign.npcIds.includes(npc.id)) {
+      this.repositories.campaigns.upsert({
+        ...context.campaign,
+        npcIds: [...context.campaign.npcIds, npc.id],
+        updatedAt: timestamp,
+        revision: context.campaign.revision + 1,
+      });
+    }
+
+    return this.getConsole(campaignId);
+  }
+
+  async deleteNpc(campaignId: string, input: NpcDeleteInput): Promise<CampaignConsoleData> {
+    this.ensureSeedData();
+    const context = this.loadContext(campaignId);
+    const npc = context.npcs.find((entry) => entry.id === input.npcId);
+    if (!npc) {
+      throw new HttpError(404, 'NPC not found.');
+    }
+    const timestamp = nowIso();
+    for (const appearance of this.repositories.npcAppearances.list().filter((entry) => entry.npcId === npc.id)) {
+      this.repositories.npcAppearances.remove(appearance.id);
+    }
+    for (const scene of this.repositories.sceneNodes.list().filter((entry) => entry.linkedNpcAppearanceIds.length > 0)) {
+      const remainingAppearanceIds = scene.linkedNpcAppearanceIds.filter((appearanceId) =>
+        !context.npcAppearances.some((appearance) => appearance.id === appearanceId && appearance.npcId === npc.id),
+      );
+      if (remainingAppearanceIds.length !== scene.linkedNpcAppearanceIds.length) {
+        this.repositories.sceneNodes.upsert({
+          ...scene,
+          linkedNpcAppearanceIds: remainingAppearanceIds,
+          updatedAt: timestamp,
+          revision: scene.revision + 1,
+        });
+      }
+    }
+    for (const goal of this.repositories.pcGoals.list().filter((entry) => entry.triggerNpcIds.includes(npc.id))) {
+      this.repositories.pcGoals.upsert({
+        ...goal,
+        triggerNpcIds: removeValue(goal.triggerNpcIds, npc.id),
+        updatedAt: timestamp,
+        revision: goal.revision + 1,
+      });
+    }
+    this.repositories.npcs.remove(npc.id);
+    this.repositories.campaigns.upsert({
+      ...context.campaign,
+      npcIds: removeValue(context.campaign.npcIds, npc.id),
+      updatedAt: timestamp,
+      revision: context.campaign.revision + 1,
+    });
+    return this.getConsole(campaignId);
+  }
+
+  async upsertLocation(campaignId: string, input: LocationUpsertInput): Promise<CampaignConsoleData> {
+    this.ensureSeedData();
+    const context = this.loadContext(campaignId);
+    const timestamp = nowIso();
+    const trimmedName = input.name.trim();
+    const trimmedKey = input.key.trim();
+    if (!trimmedName) {
+      throw new HttpError(400, 'Location name is required.');
+    }
+    if (!trimmedKey) {
+      throw new HttpError(400, 'Location key is required.');
+    }
+
+    const existingLocation = (input.locationId ? context.locations.find((location) => location.id === input.locationId) : undefined) ?? null;
+    const duplicateKey = context.locations.find((location) => location.key === trimmedKey && location.id !== existingLocation?.id);
+    if (duplicateKey) {
+      throw new HttpError(409, 'Location key already exists in this campaign.');
+    }
+
+    const location: Location =
+      existingLocation ??
+      ({
+        id: randomUUID(),
+        createdAt: timestamp,
+        updatedAt: timestamp,
+        revision: 1,
+        campaignId: context.campaign.id,
+        key: trimmedKey,
+        name: trimmedName,
+        kind: input.kind,
+        content: {},
+        tags: [],
+      } satisfies Location);
+
+    location.key = trimmedKey;
+    location.name = trimmedName;
+    location.kind = input.kind;
+    location.tags = this.normalizeStringList(input.tags);
+    location.content = this.mergeLayeredContent(location.content, {
+      publicSummary: this.makeTextBlocks('summary', [input.publicSummary.trim()]),
+      gmTruth: this.makeTextBlocks('truth', [input.gmTruth.trim()]),
+    }, timestamp);
+    location.updatedAt = timestamp;
+    location.revision = existingLocation ? existingLocation.revision + 1 : 1;
+    this.repositories.locations.upsert(location);
+
+    if (!context.campaign.locationIds.includes(location.id)) {
+      this.repositories.campaigns.upsert({
+        ...context.campaign,
+        locationIds: [...context.campaign.locationIds, location.id],
+        updatedAt: timestamp,
+        revision: context.campaign.revision + 1,
+      });
+    }
+
+    return this.getConsole(campaignId);
+  }
+
+  async deleteLocation(campaignId: string, input: LocationDeleteInput): Promise<CampaignConsoleData> {
+    this.ensureSeedData();
+    const context = this.loadContext(campaignId);
+    const location = context.locations.find((entry) => entry.id === input.locationId);
+    if (!location) {
+      throw new HttpError(404, 'Location not found.');
+    }
+    const timestamp = nowIso();
+    for (const scene of this.repositories.sceneNodes.list().filter((entry) => entry.linkedLocationIds.includes(location.id))) {
+      this.repositories.sceneNodes.upsert({
+        ...scene,
+        linkedLocationIds: removeValue(scene.linkedLocationIds, location.id),
+        updatedAt: timestamp,
+        revision: scene.revision + 1,
+      });
+    }
+    this.repositories.locations.remove(location.id);
+    this.repositories.campaigns.upsert({
+      ...context.campaign,
+      locationIds: removeValue(context.campaign.locationIds, location.id),
+      updatedAt: timestamp,
+      revision: context.campaign.revision + 1,
+    });
+    return this.getConsole(campaignId);
+  }
+
+  async upsertGoal(campaignId: string, input: GoalUpsertInput): Promise<CampaignConsoleData> {
+    this.ensureSeedData();
+    const context = this.loadContext(campaignId);
+    const timestamp = nowIso();
+    const trimmedTitle = input.title.trim();
+    const trimmedOwner = input.ownerLabel.trim();
+    if (!trimmedTitle) {
+      throw new HttpError(400, 'Goal title is required.');
+    }
+    if (!trimmedOwner) {
+      throw new HttpError(400, 'Goal owner is required.');
+    }
+
+    const existingGoal = (input.goalId ? context.pcGoals.find((goal) => goal.id === input.goalId) : undefined) ?? null;
+    const goal: PCGoal =
+      existingGoal ??
+      ({
+        id: randomUUID(),
+        createdAt: timestamp,
+        updatedAt: timestamp,
+        revision: 1,
+        campaignId: context.campaign.id,
+        ownerLabel: trimmedOwner,
+        title: trimmedTitle,
+        description: '',
+        progressState: 'active',
+        progressNotes: [],
+        triggerSceneIds: [],
+        triggerNpcIds: [],
+      } satisfies PCGoal);
+
+    goal.ownerLabel = trimmedOwner;
+    goal.title = trimmedTitle;
+    goal.description = input.description.trim();
+    goal.progressState = input.progressState;
+    goal.progressNotes = this.normalizeStringList(input.progressNotes);
+    goal.triggerSceneIds = this.filterExistingIds(
+      this.normalizeStringList(input.triggerSceneIds),
+      context.sceneNodes.map((scene) => scene.id),
+    );
+    goal.triggerNpcIds = this.filterExistingIds(
+      this.normalizeStringList(input.triggerNpcIds),
+      context.npcs.map((npc) => npc.id),
+    );
+    goal.updatedAt = timestamp;
+    goal.revision = existingGoal ? existingGoal.revision + 1 : 1;
+    this.repositories.pcGoals.upsert(goal);
+    return this.getConsole(campaignId);
+  }
+
+  async deleteGoal(campaignId: string, input: GoalDeleteInput): Promise<CampaignConsoleData> {
+    this.ensureSeedData();
+    const context = this.loadContext(campaignId);
+    const goal = context.pcGoals.find((entry) => entry.id === input.goalId);
+    if (!goal) {
+      throw new HttpError(404, 'Goal not found.');
+    }
+    const timestamp = nowIso();
+    for (const scene of this.repositories.sceneNodes.list().filter((entry) => (entry.linkedGoalIds ?? []).includes(goal.id))) {
+      this.repositories.sceneNodes.upsert({
+        ...scene,
+        linkedGoalIds: removeValue(scene.linkedGoalIds ?? [], goal.id),
+        updatedAt: timestamp,
+        revision: scene.revision + 1,
+      });
+    }
+    this.repositories.pcGoals.remove(goal.id);
     return this.getConsole(campaignId);
   }
 
@@ -651,6 +1261,9 @@ export class CampaignConsoleService {
       return;
     }
     if (this.repositories.campaigns.count() > 0) {
+      if (this.repositories.pcGoals.count() === 0) {
+        this.repositories.pcGoals.saveAll(buildCampaignSeed().pcGoals);
+      }
       this.seedChecked = true;
       return;
     }
@@ -672,6 +1285,7 @@ export class CampaignConsoleService {
     this.repositories.npcs.saveAll(seed.npcs);
     this.repositories.npcAppearances.saveAll(seed.npcAppearances);
     this.repositories.pcs.saveAll(seed.pcs);
+    this.repositories.pcGoals.saveAll(seed.pcGoals);
     this.repositories.locations.saveAll(seed.locations);
     this.repositories.rules.saveAll(seed.rules);
     this.repositories.resourceDefinitions.saveAll(seed.resourceDefinitions);
@@ -726,6 +1340,7 @@ export class CampaignConsoleService {
       npcs: this.repositories.npcs.list().filter((npc) => npc.campaignId === campaign.id),
       npcAppearances: this.repositories.npcAppearances.list().filter((appearance) => appearance.chapterId === chapter.id),
       pcs: this.repositories.pcs.list().filter((pc) => pc.campaignId === campaign.id),
+      pcGoals: this.repositories.pcGoals.list().filter((goal) => goal.campaignId === campaign.id),
       locations: this.repositories.locations.list().filter((location) => location.campaignId === campaign.id),
       rules: this.repositories.rules.list(),
       resourceDefinitions: this.repositories.resourceDefinitions.list(),
@@ -750,6 +1365,115 @@ export class CampaignConsoleService {
       events: this.repositories.events.list().filter((event) => event.sessionRunId === sessionRun.id),
       diceRolls: this.repositories.diceRolls.list().filter((roll) => roll.sessionRunId === sessionRun.id),
     };
+  }
+
+  private buildSceneDeletePreview(context: CampaignContext, sceneNode: SceneNode): SceneNodeDeletePreview {
+    const endeavorIds = context.endeavors.filter((endeavor) => endeavor.sceneNodeId === sceneNode.id).map((endeavor) => endeavor.id);
+    return {
+      sceneNodeId: sceneNode.id,
+      sceneTitle: sceneNode.title,
+      connectedEdgeCount: this.repositories.sceneEdges.list().filter((edge) => edge.fromSceneId === sceneNode.id || edge.toSceneId === sceneNode.id).length,
+      sceneStateCount: this.repositories.sceneStates.list().filter((state) => state.sceneNodeId === sceneNode.id).length,
+      hookCount: this.repositories.hooks.list().filter((hook) => hook.sceneNodeId === sceneNode.id).length,
+      outcomeCount: this.repositories.outcomes.list().filter((outcome) => outcome.sceneNodeId === sceneNode.id).length,
+      endeavorCount: endeavorIds.length,
+      obstacleCount: this.repositories.obstacles.list().filter((obstacle) => endeavorIds.includes(obstacle.endeavorId)).length,
+      endeavorRunCount: this.repositories.endeavorRuns.list().filter((run) => endeavorIds.includes(run.endeavorId)).length,
+      encounterCount: this.repositories.encounters.list().filter((encounter) => encounter.sceneNodeId === sceneNode.id).length,
+      npcAppearanceCount: this.repositories.npcAppearances.list().filter((appearance) => appearance.sceneNodeId === sceneNode.id).length,
+    };
+  }
+
+  private syncSceneNpcAppearances(
+    context: CampaignContext,
+    sceneNode: SceneNode,
+    inputs: SceneNpcAppearanceInput[],
+    timestamp: string,
+  ): void {
+    const existingAppearances = this.repositories.npcAppearances
+      .list()
+      .filter((appearance) => appearance.chapterId === context.chapter.id && appearance.sceneNodeId === sceneNode.id);
+    const existingById = new Map(existingAppearances.map((appearance) => [appearance.id, appearance]));
+    const validNpcIds = new Set(context.npcs.map((npc) => npc.id));
+    const nextAppearanceIds: string[] = [];
+
+    for (const input of inputs) {
+      if (!validNpcIds.has(input.npcId)) {
+        continue;
+      }
+
+      const existingAppearance = (input.appearanceId ? existingById.get(input.appearanceId) : undefined) ?? null;
+      const appearance: NPCAppearance =
+        existingAppearance ??
+        ({
+          id: randomUUID(),
+          createdAt: timestamp,
+          updatedAt: timestamp,
+          revision: 1,
+          npcId: input.npcId,
+          chapterId: context.chapter.id,
+          sceneNodeId: sceneNode.id,
+          roleIds: [],
+          localSecrets: [],
+          portrayalOverride: [],
+          notes: [],
+        } satisfies NPCAppearance);
+
+      appearance.npcId = input.npcId;
+      appearance.chapterId = context.chapter.id;
+      appearance.sceneNodeId = sceneNode.id;
+      appearance.aliasInScene = input.aliasInScene?.trim() || undefined;
+      appearance.stance = input.stance;
+      appearance.localGoal = input.localGoal?.trim() || undefined;
+      appearance.localSecrets = this.makeTextBlocks('truth', input.localSecrets);
+      appearance.portrayalOverride = this.makeTextBlocks('gm', input.portrayalOverride);
+      appearance.notes = this.makeTextBlocks('note', input.notes);
+      appearance.updatedAt = timestamp;
+      appearance.revision = existingAppearance ? existingAppearance.revision + 1 : 1;
+      this.repositories.npcAppearances.upsert(appearance);
+      nextAppearanceIds.push(appearance.id);
+      existingById.delete(appearance.id);
+    }
+
+    for (const appearance of existingById.values()) {
+      this.repositories.npcAppearances.remove(appearance.id);
+    }
+
+    sceneNode.linkedNpcAppearanceIds = nextAppearanceIds;
+  }
+
+  private mergeLayeredContent<T extends object>(layered: Layered<T>, patch: DeepPartial<T>, timestamp: string): Layered<T> {
+    return {
+      ...layered,
+      gm: {
+        ...(layered.gm ?? { updatedAt: timestamp }),
+        patch,
+        updatedAt: timestamp,
+      },
+    };
+  }
+
+  private makeTextBlocks(kind: 'summary' | 'gm' | 'truth' | 'note', texts: string[]): TextBlock[] {
+    return this.normalizeStringList(texts).map((text) => ({
+      id: randomUUID(),
+      kind,
+      text,
+    }));
+  }
+
+  private normalizeStringList(values: string[]): string[] {
+    return Array.from(
+      new Set(
+        values
+          .map((value) => value.trim())
+          .filter(Boolean),
+      ),
+    );
+  }
+
+  private filterExistingIds(values: string[], validIds: string[]): string[] {
+    const validIdSet = new Set(validIds);
+    return this.normalizeStringList(values).filter((value) => validIdSet.has(value));
   }
 
   private getOrCreateSceneState(context: CampaignContext, sceneNodeId: string): SceneState {

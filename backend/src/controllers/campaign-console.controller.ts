@@ -22,6 +22,65 @@ export class CampaignConsoleController {
     response.json(await this.campaignConsoleService.addQuickNote(String(request.params['campaignId']), request.body));
   };
 
+  selectSceneOutcome = async (request: Request, response: Response) => {
+    response.json(
+      await this.campaignConsoleService.selectSceneOutcome(String(request.params['campaignId']), request.body),
+    );
+  };
+
+  linkSceneStage = async (request: Request, response: Response) => {
+    response.json(await this.campaignConsoleService.linkSceneStage(String(request.params['campaignId']), request.body));
+  };
+
+  previewSceneDelete = async (request: Request, response: Response) => {
+    response.json(
+      await this.campaignConsoleService.previewSceneDelete(
+        String(request.params['campaignId']),
+        String(request.params['sceneNodeId']),
+      ),
+    );
+  };
+
+  upsertSceneNode = async (request: Request, response: Response) => {
+    response.json(await this.campaignConsoleService.upsertSceneNode(String(request.params['campaignId']), request.body));
+  };
+
+  deleteSceneNode = async (request: Request, response: Response) => {
+    response.json(await this.campaignConsoleService.deleteSceneNode(String(request.params['campaignId']), request.body));
+  };
+
+  createSceneEdge = async (request: Request, response: Response) => {
+    response.json(await this.campaignConsoleService.createSceneEdge(String(request.params['campaignId']), request.body));
+  };
+
+  deleteSceneEdge = async (request: Request, response: Response) => {
+    response.json(await this.campaignConsoleService.deleteSceneEdge(String(request.params['campaignId']), request.body));
+  };
+
+  upsertNpc = async (request: Request, response: Response) => {
+    response.json(await this.campaignConsoleService.upsertNpc(String(request.params['campaignId']), request.body));
+  };
+
+  deleteNpc = async (request: Request, response: Response) => {
+    response.json(await this.campaignConsoleService.deleteNpc(String(request.params['campaignId']), request.body));
+  };
+
+  upsertLocation = async (request: Request, response: Response) => {
+    response.json(await this.campaignConsoleService.upsertLocation(String(request.params['campaignId']), request.body));
+  };
+
+  deleteLocation = async (request: Request, response: Response) => {
+    response.json(await this.campaignConsoleService.deleteLocation(String(request.params['campaignId']), request.body));
+  };
+
+  upsertGoal = async (request: Request, response: Response) => {
+    response.json(await this.campaignConsoleService.upsertGoal(String(request.params['campaignId']), request.body));
+  };
+
+  deleteGoal = async (request: Request, response: Response) => {
+    response.json(await this.campaignConsoleService.deleteGoal(String(request.params['campaignId']), request.body));
+  };
+
   adjustFavor = async (request: Request, response: Response) => {
     response.json(await this.campaignConsoleService.adjustFavor(String(request.params['campaignId']), request.body));
   };

@@ -70,7 +70,7 @@ This file is the running tracker for work done with Codex. Keep it current so fu
   Make stable identifiers and important links more durable
   Enable later event-log and replay support through storage choices, not full feature work yet
 
-- `[ ]` Phase 3: War Room v1
+- `[~]` Phase 3: War Room v1
   Notes:
   This phase is not a combat UI expansion. It is the campaign-graph foundation.
   Task cluster:
@@ -79,6 +79,18 @@ This file is the running tracker for work done with Codex. Keep it current so fu
   Event log for what happened
   Derived current state for what is true now
   Custom authoring first, imported content later
+  Active subtask: `Dedicated Scene View with minimap, runtime scene controls, and session-stage bridge`.
+  Active subtask: `Flow node CRUD plus right-drawer authoring for nodes, NPCs, locations, and PC goals`.
+  Files: `shared/domain/campaign-models.ts`, `backend/src/services/campaign-console.service.ts`, `backend/src/controllers/campaign-console.controller.ts`, `backend/src/routes/campaign.routes.ts`, `backend/src/services/campaign-console.service.spec.ts`, `src/app/features/campaign-console/campaign-console-page.component.ts`, `src/app/features/campaign-console/campaign-scene-page.component.ts`, `src/app/features/campaign-console/campaign-scene-page.component.scss`, `src/app/features/campaign-console/campaign-console.store.ts`, `src/app/core/session-store.service.ts`, `src/app/core/shell-layout.component.ts`, `src/app/app.routes.ts`, `CODEX_WORKBOARD.md`.
+  Decision: evolve the current command board into a planning-first flow workspace instead of building a separate parallel module.
+  Completed: repurposed `/gm/campaigns/:campaignId` into a planning-first Flow View with a cleaner chapter backbone canvas and compact inspector; added resolved node planning metadata (`classification`, `readiness`, `focus`) on the campaign graph; added first-class reusable `PCGoal` entities into the seeded War Room data and linked them into flow nodes; kept runtime scene state and quick note capture available from the inspector instead of the old command rail.
+  Completed update: added `/gm/campaigns/:campaignId/scenes/:sceneId` as a dedicated Scene View with a compact flow minimap, focused scene core, linked NPC/goal/location rail, outcome toggles, quick runtime note capture, and explicit session-stage linking plus direct stage publish and YouTube thumbnail support for the shell-selected session.
+  Completed update: promoted the shell session picker into a real global active-session signal so War Room pages can target a session without leaving the campaign route.
+  Verification: `npx ngc -p tsconfig.app.json` passed, `npm run build:backend` passed, `npm run test:backend` passed (20 tests).
+  Completed update: added drawer-based War Room authoring on top of the current console stack, including flow node create/update/delete, light edge editing, reusable NPC/location/goal editors, raw NPC appearance-aware scene linking, and a node-delete confirmation modal with explicit cascade counts.
+  Remaining: browser-check node creation/edit/delete, edge add/remove, shared NPC/location/goal editing, and scene-link editing from Flow View; then decide whether Scene View also needs direct edit-entry affordances or whether the current “edit from flow” handoff is enough.
+  Decision: node deletion should open a confirmation modal with an explicit cascade summary; shared entities like NPCs, locations, and goals will never be deleted implicitly from node deletion.
+  Next step: run the War Room browser pass, then move to richer runtime truth tools such as NPC reveal state, current attitude editing, or event-log-backed campaign state depending on what feels missing at the table.
 
 - `[ ]` Phase 4: Player-Safe Publishing and Reuse
   Notes:
@@ -177,6 +189,15 @@ This file is the running tracker for work done with Codex. Keep it current so fu
   Verification: `npm run test:backend` passed (13 tests), `npm run build:backend` passed, `npx ngc -p tsconfig.app.json` passed.
   Remaining: manual runtime smoke check with existing `backend/data/*.json` content, then decide whether Slice 2 should be stage runtime or whether the roster/session save semantics need tightening before more migration work.
   Next step: browser- and runtime-check existing local data against the SQLite-backed session/roster repositories, then move to the next migration slice.
+
+- `[~]` SQLite migration slices 2-4: stage runtime, rolls, and combats
+  Notes:
+  Move `stage_scenes`, `live_stage_states`, `rolls`, and `combats` from legacy JSON files into SQLite JSON-row tables with one-time lazy backfill and no API changes.
+  Files: `backend/src/lib/sqlite.ts`, `backend/src/repositories/stage-scene.repository.ts`, `backend/src/repositories/live-stage.repository.ts`, `backend/src/repositories/roll.repository.ts`, `backend/src/repositories/combat.repository.ts`, `backend/src/services/stage.service.spec.ts`, `backend/src/services/roll.service.spec.ts`, `backend/src/services/combat.service.spec.ts`.
+  Completed: switched stage scenes, live stage state, rolls, and combats to async SQLite-backed storage with one-time lazy backfill from legacy JSON files; added a keyed live-stage repository using `sessionId`; and added service-level backfill tests proving stage, roll, and combat data stay available after the legacy JSON files are cleared.
+  Verification: `npm run test:backend` passed (16 tests), `npm run build:backend` passed, `npx ngc -p tsconfig.app.json` passed.
+  Remaining: final runtime smoke check with existing local data for stage publish/reload, roll analytics, reopening older combats, and session/full-app export-import flows now that all Session Ops repositories read from SQLite.
+  Next step: complete the manual runtime smoke check, then decide whether to tighten roster/session write semantics or move on to the next persistence or War Room milestone.
 
 - `[>]` Player-safe reveal and notes improvements
   Notes:

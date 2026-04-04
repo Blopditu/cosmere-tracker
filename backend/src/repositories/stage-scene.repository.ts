@@ -1,9 +1,14 @@
 import path from 'node:path';
 import { StageScene } from '@shared/domain';
-import { JsonCollectionRepository } from '../lib/json-store';
+import { AsyncSqliteJsonRepository } from '../lib/sqlite';
 
-export class StageSceneRepository extends JsonCollectionRepository<StageScene> {
+export class StageSceneRepository extends AsyncSqliteJsonRepository<StageScene> {
   constructor(dataDir: string) {
-    super(path.join(dataDir, 'stage-scenes.json'), []);
+    super(
+      path.join(dataDir, 'cosmere-tracker.sqlite'),
+      'stage_scenes',
+      path.join(dataDir, 'stage-scenes.json'),
+      [],
+    );
   }
 }

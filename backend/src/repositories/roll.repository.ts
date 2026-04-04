@@ -1,9 +1,14 @@
 import path from 'node:path';
 import { RollEvent } from '@shared/domain';
-import { JsonCollectionRepository } from '../lib/json-store';
+import { AsyncSqliteJsonRepository } from '../lib/sqlite';
 
-export class RollRepository extends JsonCollectionRepository<RollEvent> {
+export class RollRepository extends AsyncSqliteJsonRepository<RollEvent> {
   constructor(dataDir: string) {
-    super(path.join(dataDir, 'rolls.json'), []);
+    super(
+      path.join(dataDir, 'cosmere-tracker.sqlite'),
+      'rolls',
+      path.join(dataDir, 'rolls.json'),
+      [],
+    );
   }
 }

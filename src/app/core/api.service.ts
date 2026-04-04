@@ -28,8 +28,8 @@ export class ApiService {
     return this.trackMutation(firstValueFrom(this.http.put<T>(this.buildUrl(url), body)));
   }
 
-  delete<T = void>(url: string): Promise<T> {
-    return this.trackMutation(firstValueFrom(this.http.delete<T>(this.buildUrl(url))));
+  delete<T = void>(url: string, body?: unknown): Promise<T> {
+    return this.trackMutation(firstValueFrom(this.http.delete<T>(this.buildUrl(url), body === undefined ? undefined : { body })));
   }
 
   upload<T>(url: string, formData: FormData): Promise<T> {

@@ -19,6 +19,7 @@ import { AppRuntimeService } from './app-runtime.service';
 export class SessionStoreService {
   readonly sessions = signal<SessionSummary[]>([]);
   readonly loading = signal(false);
+  readonly activeSessionId = signal('');
   constructor(
     private readonly api: ApiService,
     private readonly runtime: AppRuntimeService,
@@ -106,5 +107,9 @@ export class SessionStoreService {
     ]);
     const liveTitle = scenes.find((scene) => scene.id === liveState.liveSceneId)?.title ?? null;
     this.runtime.resetLiveScene(sessionId, liveTitle);
+  }
+
+  setActiveSession(sessionId: string): void {
+    this.activeSessionId.set(sessionId);
   }
 }

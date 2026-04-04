@@ -8,14 +8,30 @@ import {
   DiceRollInput,
   EndeavorApproachResolutionInput,
   FavorAdjustmentInput,
+  GoalDeleteInput,
+  GoalUpsertInput,
+  LiveStageState,
+  LocationDeleteInput,
+  LocationUpsertInput,
+  NpcDeleteInput,
+  NpcUpsertInput,
   QuickNoteInput,
   ResourceAdjustmentInput,
   RuleEvaluationRequest,
   RuleEvaluationResult,
+  SceneEdgeCreateInput,
+  SceneEdgeDeleteInput,
+  SceneNodeDeleteInput,
+  SceneNodeDeletePreview,
+  SceneNodeUpsertInput,
+  SceneOutcomeSelectionInput,
+  SceneStageLinkInput,
   SceneStateMutationInput,
   SimulationResult,
+  StageScene,
 } from '@shared/domain';
 import { ApiService } from '../../core/api.service';
+import { AppRuntimeService } from '../../core/app-runtime.service';
 
 @Injectable({
   providedIn: 'root',
@@ -26,9 +42,16 @@ export class CampaignConsoleStore {
   readonly lastRuleEvaluation = signal<RuleEvaluationResult | null>(null);
   readonly simulationResults = signal<SimulationResult[]>([]);
   readonly analytics = signal<CampaignAnalyticsSummary | null>(null);
+  readonly stageScenes = signal<StageScene[]>([]);
+  readonly liveStageState = signal<LiveStageState | null>(null);
+  readonly stageSessionId = signal<string | null>(null);
   readonly loading = signal(false);
+  readonly stageLoading = signal(false);
 
-  constructor(private readonly api: ApiService) {}
+  constructor(
+    private readonly api: ApiService,
+    private readonly runtime: AppRuntimeService,
+  ) {}
 
   async loadCampaigns(): Promise<Campaign[]> {
     const campaigns = await this.api.get<Campaign[]>('/api/campaigns');
@@ -55,6 +78,58 @@ export class CampaignConsoleStore {
 
   addQuickNote(campaignId: string, input: QuickNoteInput): Promise<CampaignConsoleData> {
     return this.mutate(this.api.post<CampaignConsoleData>(`/api/campaigns/${campaignId}/runtime/notes`, input));
+  }
+
+  selectSceneOutcome(campaignId: string, input: SceneOutcomeSelectionInput): Promise<CampaignConsoleData> {
+    return this.mutate(this.api.post<CampaignConsoleData>(`/api/campaigns/${campaignId}/scenes/outcomes`, input));
+  }
+
+  linkSceneStage(campaignId: string, input: SceneStageLinkInput): Promise<CampaignConsoleData> {
+    return this.mutate(this.api.patch<CampaignConsoleData>(`/api/campaigns/${campaignId}/scenes/stage-link`, input));
+  }
+
+  previewSceneDelete(campaignId: string, sceneNodeId: string): Promise<SceneNodeDeletePreview> {
+    return this.api.get<SceneNodeDeletePreview>(`/api/campaigns/${campaignId}/scenes/${sceneNodeId}/delete-preview`);
+  }
+
+  upsertSceneNode(campaignId: string, input: SceneNodeUpsertInput): Promise<CampaignConsoleData> {
+    return this.mutate(this.api.post<CampaignConsoleData>(`/api/campaigns/${campaignId}/scenes`, input));
+  }
+
+  deleteSceneNode(campaignId: string, input: SceneNodeDeleteInput): Promise<CampaignConsoleData> {
+    return this.mutate(this.api.delete<CampaignConsoleData>(`/api/campaigns/${campaignId}/scenes`, input));
+  }
+
+  createSceneEdge(campaignId: string, input: SceneEdgeCreateInput): Promise<CampaignConsoleData> {
+    return this.mutate(this.api.post<CampaignConsoleData>(`/api/campaigns/${campaignId}/scene-edges`, input));
+  }
+
+  deleteSceneEdge(campaignId: string, input: SceneEdgeDeleteInput): Promise<CampaignConsoleData> {
+    return this.mutate(this.api.delete<CampaignConsoleData>(`/api/campaigns/${campaignId}/scene-edges`, input));
+  }
+
+  upsertNpc(campaignId: string, input: NpcUpsertInput): Promise<CampaignConsoleData> {
+    return this.mutate(this.api.post<CampaignConsoleData>(`/api/campaigns/${campaignId}/npcs`, input));
+  }
+
+  deleteNpc(campaignId: string, input: NpcDeleteInput): Promise<CampaignConsoleData> {
+    return this.mutate(this.api.delete<CampaignConsoleData>(`/api/campaigns/${campaignId}/npcs`, input));
+  }
+
+  upsertLocation(campaignId: string, input: LocationUpsertInput): Promise<CampaignConsoleData> {
+    return this.mutate(this.api.post<CampaignConsoleData>(`/api/campaigns/${campaignId}/locations`, input));
+  }
+
+  deleteLocation(campaignId: string, input: LocationDeleteInput): Promise<CampaignConsoleData> {
+    return this.mutate(this.api.delete<CampaignConsoleData>(`/api/campaigns/${campaignId}/locations`, input));
+  }
+
+  upsertGoal(campaignId: string, input: GoalUpsertInput): Promise<CampaignConsoleData> {
+    return this.mutate(this.api.post<CampaignConsoleData>(`/api/campaigns/${campaignId}/goals`, input));
+  }
+
+  deleteGoal(campaignId: string, input: GoalDeleteInput): Promise<CampaignConsoleData> {
+    return this.mutate(this.api.delete<CampaignConsoleData>(`/api/campaigns/${campaignId}/goals`, input));
   }
 
   adjustFavor(campaignId: string, input: FavorAdjustmentInput): Promise<CampaignConsoleData> {
@@ -119,6 +194,36 @@ export class CampaignConsoleStore {
     const analytics = await this.api.get<CampaignAnalyticsSummary>(`/api/analytics/campaigns/${campaignId}`);
     this.analytics.set(analytics);
     return analytics;
+  }
+
+  async loadStageBridge(sessionId: string): Promise<void> {
+    this.stageLoading.set(true);
+    try {
+      const [stageScenes, liveStageState] = await Promise.all([
+        this.api.get<StageScene[]>(`/api/sessions/${sessionId}/stage-scenes`),
+        this.api.get<LiveStageState>(`/api/sessions/${sessionId}/live-stage`),
+      ]);
+      this.stageSessionId.set(sessionId);
+      this.stageScenes.set(stageScenes);
+      this.liveStageState.set(liveStageState);
+      const liveTitle = stageScenes.find((scene) => scene.id === liveStageState.liveSceneId)?.title ?? null;
+      this.runtime.resetLiveScene(sessionId, liveTitle);
+    } finally {
+      this.stageLoading.set(false);
+    }
+  }
+
+  clearStageBridge(): void {
+    this.stageSessionId.set(null);
+    this.stageScenes.set([]);
+    this.liveStageState.set(null);
+  }
+
+  async publishStageScene(sessionId: string, liveSceneId: string | null): Promise<void> {
+    const liveStageState = await this.api.put<LiveStageState>(`/api/sessions/${sessionId}/live-stage`, { liveSceneId });
+    this.liveStageState.set(liveStageState);
+    const liveTitle = this.stageScenes().find((scene) => scene.id === liveSceneId)?.title ?? null;
+    this.runtime.resetLiveScene(sessionId, liveTitle);
   }
 
   private async mutate(request: Promise<CampaignConsoleData>): Promise<CampaignConsoleData> {

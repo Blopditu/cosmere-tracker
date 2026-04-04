@@ -18,7 +18,10 @@ import {
   NPCAppearance,
   Obstacle,
   Outcome,
+  FlowNodeClassification,
+  FlowNodeReadiness,
   Predicate,
+  PCGoal,
   ResolvedChapterBoard,
   ResolvedNPCCard,
   ResolvedSceneNode,
@@ -144,6 +147,40 @@ function resolveBlockDiff(sourceBlocks: TextBlock[], resolvedBlocks: TextBlock[]
   return { changedBlocks, insertedBlocks, hiddenBlocks };
 }
 
+function resolveSceneClassification(sceneNode: SceneNode, chapter: Chapter): FlowNodeClassification {
+  if (sceneNode.planning?.classification) {
+    return sceneNode.planning.classification;
+  }
+
+  if (sceneNode.sceneKind === 'endeavor' || sceneNode.sceneKind === 'transition') {
+    return 'hub';
+  }
+
+  return chapter.requiredBeatSceneIds.includes(sceneNode.id) ? 'critical' : 'optional';
+}
+
+function resolveSceneReadiness(sceneNode: SceneNode): FlowNodeReadiness {
+  if (sceneNode.planning?.readiness) {
+    return sceneNode.planning.readiness;
+  }
+
+  const hasPreparation = Boolean(sceneNode.content.source?.value.summaryBlocks.length || sceneNode.content.source?.value.gmBlocks.length);
+  return hasPreparation ? 'ready' : 'draft';
+}
+
+function resolveSceneFocus(sceneNode: SceneNode, resolvedContent: SceneContent): string {
+  const explicitFocus = sceneNode.planning?.focus?.trim();
+  if (explicitFocus) {
+    return explicitFocus;
+  }
+
+  return (
+    resolvedContent.noteBlocks[0]?.text ??
+    resolvedContent.summaryBlocks[0]?.text ??
+    'Prep focus has not been written for this scene yet.'
+  );
+}
+
 export function evaluatePredicate(
   predicate: Predicate,
   sceneStatuses: Record<string, SceneState['status']>,
@@ -259,6 +296,12 @@ export function buildResolvedSceneNodes(
 
     return {
       ...sceneNode,
+      linkedGoalIds: sceneNode.linkedGoalIds ?? [],
+      resolvedPlanning: {
+        classification: resolveSceneClassification(sceneNode, chapter),
+        readiness: resolveSceneReadiness(sceneNode),
+        focus: resolveSceneFocus(sceneNode, resolvedContent),
+      },
       resolvedContent,
       gmDiff,
       state: state.status === 'locked' && isUnlocked ? { ...state, status: 'available' } : state,
@@ -313,6 +356,7 @@ export function buildCampaignConsoleData(params: {
   sceneStates: SceneState[];
   npcs: NPC[];
   npcAppearances: NPCAppearance[];
+  pcGoals: PCGoal[];
   locations: Location[];
   rules: RuleReference[];
   conditions: Condition[];
@@ -351,7 +395,10 @@ export function buildCampaignConsoleData(params: {
     activeChapterId: params.chapter.id,
     board,
     sceneIndex: Object.fromEntries(board.nodes.map((node) => [node.id, node])),
+    npcs: params.npcs,
+    npcAppearances: params.npcAppearances,
     npcCards: buildResolvedNPCCards(params.npcs, params.npcAppearances, params.chapter.id),
+    pcGoals: params.pcGoals,
     locations: params.locations,
     rules: params.rules,
     conditions: params.conditions,
